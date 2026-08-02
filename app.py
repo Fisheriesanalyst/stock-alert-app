@@ -51,7 +51,7 @@ default_data = [
 
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="wide")
-st.title("📊 株価・投資信託 チェックボード")
+st.markdown("### 📊 株価・投資信託 チェックボード")
 
 # --- 画像と説明文の表示 ---
 try:
@@ -69,8 +69,8 @@ st.info("""
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
 
-# --- 1. 銘柄の管理機能（画面編集・インポート・エクスポート） ---
-st.header("⚙️ 1. 銘柄の登録・管理")
+# --- 1. 銘柄の管理機能 ---
+st.markdown("#### 1. 銘柄の登録・管理")
 st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。別の端末で使う場合は「エクスポート」でファイルを保存し、「インポート」で読み込んでください。")
 
 col1, col2 = st.columns(2)
@@ -110,14 +110,14 @@ tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分']
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
 
 st.markdown("---")
-st.header("📈 2. 株価・基準価額の確認")
+st.markdown("#### 2. 株価・基準価額の確認")
 
 if st.button("🔄 最新データを取得してチェックする", type="primary"):
     
     # ========================================
     # 個別株チェック
     # ========================================
-    st.subheader("📉 個別株式")
+    st.markdown("##### 個別株式")
     results = []
     alerts = []
     
@@ -179,7 +179,8 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 
                 plt.tight_layout()
                 
-                with st.expander(f"{name} のグラフを見る", expanded=(drop_ratio >= 0.25)):
+                # expanded=Trueに変更し、初期状態で全展開（クリックで折りたたみ可能）
+                with st.expander(f"{name} のグラフを見る", expanded=True):
                     st.pyplot(fig)
                 plt.close()
                     
@@ -199,9 +200,9 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     st.markdown("---")
 
     # ========================================
-    # 投資信託チェック（安定化対応版）
+    # 投資信託チェック
     # ========================================
-    st.subheader("📈 投資信託")
+    st.markdown("##### 投資信託")
     
     if len(funds) > 0:
         options = Options()
@@ -225,7 +226,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             url = f"https://finance.yahoo.co.jp/quote/{str(code).strip()}/history"
             driver.get(url)
-            time.sleep(4)  # 初回読み込み待ちを少し長めに調整
+            time.sleep(4)
             
             all_html = []
             for page in range(20):
@@ -233,7 +234,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 try:
                     next_btn = driver.find_element(By.XPATH, "//*[contains(text(), '次へ')]")
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(3)  # ページめくり後の読み込み待ちを確保
+                    time.sleep(3)
                 except:
                     break
 
@@ -243,10 +244,8 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                     dfs = pd.read_html(io.StringIO(html))
                     for temp_df in dfs:
                         cols = [str(c) for c in temp_df.columns]
-                        # 2列以上あり、かつ日付っぽい情報が含まれているテーブルを広く拾う
                         if len(cols) >= 2 and any('日付' in c for c in cols):
                             date_col = [c for c in cols if '日付' in c][0]
-                            # 2列目以降を価格（基準価額）として採用
                             price_col = [c for c in cols if c != date_col][0]
                             
                             df_piece = temp_df[[date_col, price_col]].copy()
@@ -260,7 +259,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 st.warning(f"⚠️ {name} のデータがテーブルとして抽出できませんでした。")
                 continue
 
-            # データの整形
             full_df['Date'] = pd.to_datetime(full_df['Date'].astype(str).str.replace('年', '/').str.replace('月', '/').str.replace('日', ''), errors='coerce')
             full_df['Price'] = pd.to_numeric(full_df['Price'].astype(str).str.replace(',', '').str.replace('円', ''), errors='coerce')
             
@@ -297,6 +295,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             ax.text(0.02, 0.95, text_str, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
             ax.set_xlim(plot_df['Date'].min(), last_date + timedelta(days=15))
             
+            # expanded=Trueに変更し、初期状態で全展開（クリックで折りたたみ可能）
             with st.expander(f"{name} の推移を見る", expanded=True):
                 st.pyplot(fig)
             plt.close()
