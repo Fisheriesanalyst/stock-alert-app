@@ -51,7 +51,9 @@ default_data = [
 
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="wide")
-st.markdown("### 📊 株価・投資信託 チェックボード")
+
+# タイトルをセンタリング表示（HTMLのh3タグとcenterタグを使用）
+st.markdown("<h3 style='text-align: center;'>📊 株価・投資信託 チェックボード</h3>", unsafe_allow_html=True)
 
 # --- 画像と説明文の表示 ---
 try:
@@ -179,7 +181,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 
                 plt.tight_layout()
                 
-                # expanded=Trueに変更し、初期状態で全展開（クリックで折りたたみ可能）
                 with st.expander(f"{name} のグラフを見る", expanded=True):
                     st.pyplot(fig)
                 plt.close()
@@ -295,7 +296,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             ax.text(0.02, 0.95, text_str, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
             ax.set_xlim(plot_df['Date'].min(), last_date + timedelta(days=15))
             
-            # expanded=Trueに変更し、初期状態で全展開（クリックで折りたたみ可能）
             with st.expander(f"{name} の推移を見る", expanded=True):
                 st.pyplot(fig)
             plt.close()
