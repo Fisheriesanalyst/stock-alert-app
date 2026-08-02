@@ -12,9 +12,10 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
+import streamlit.components.v1 as components
 import japanize_matplotlib
 
-# --- デフォルトの銘柄データ（ご指定の11銘柄に絞り込み） ---
+# --- デフォルトの銘柄データ ---
 default_data = [
     {"区分": "個別株", "銘柄名": "極洋", "コード": "1301.T"},
     {"区分": "個別株", "銘柄名": "ディー・エヌ・エー", "コード": "2432.T"},
@@ -30,7 +31,6 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-# 横幅を制限して見やすくしています
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
 # カスタムCSS（Primaryボタンを青地・白抜きに変更）
@@ -64,7 +64,7 @@ st.info("""
 本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
-# 色分けの説明文を追加（文章をシンプルにし、行全体に色を適用）
+# 色分けの説明文
 st.markdown("""
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
     <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
@@ -72,10 +72,6 @@ st.markdown("""
     <span style="color: #d62728;">25％以上：赤色のグラフ</span>
 </div>
 """, unsafe_allow_html=True)
-
-# --- セッション（一時記憶）の初期化 ---
-if 'portfolio' not in st.session_state:
-    st.session_state['portfolio'] = pd.DataFrame(default_data)
 
 st.markdown("---")
 
@@ -92,30 +88,39 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
+# --- ブラウザのローカルストレージを利用したデータ管理 ---
+# セッションの初期化（初回はデフォルトデータ）
+if 'portfolio' not in st.session_state:
+    st.session_state['portfolio'] = pd.DataFrame(default_data)
+
+# ブラウザのlocalStorageからデータを復元・保存するためのJavaScriptコンポーネント
+storage_component = components.html(
+    """
+    <script>
+    const STORAGE_KEY = "stock_app_portfolio_v1";
+    
+    // Python側からデータを受け取るための仕組み
+    window.addEventListener("message", (event) => {
+        if (event.data.type === "SAVE_DATA") {
+            localStorage.setItem(STORAGE_KEY, event.data.payload);
+        }
+    });
+
+    // ページ読み込み時にlocalStorageからデータを取得してStreamlitに送る
+    const savedData = localStorage.getItem(STORAGE_KEY);
+    if (savedData) {
+        window.parent.postMessage({ type: "LOAD_DATA", payload: savedData }, "*");
+    }
+    </script>
+    """,
+    height=0,
+)
+
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。別の端末で使う場合は「エクスポート」でファイルを保存し、「インポート」で読み込んでください。")
+st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、お使いのブラウザに自動で記憶されます。")
 
-col1, col2 = st.columns(2)
-with col1:
-    uploaded_file = st.file_uploader("📂 JSONファイルをインポート", type="json")
-    if uploaded_file is not None:
-        try:
-            imported_data = json.load(uploaded_file)
-            st.session_state['portfolio'] = pd.DataFrame(imported_data)
-            st.success("データをインポートしました！")
-        except Exception as e:
-            st.error("インポートに失敗しました。ファイル形式を確認してください。")
-
-with col2:
-    export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-    st.download_button(
-        label="💾 現在のデータをエクスポート",
-        data=export_json,
-        file_name="portfolio_data.json",
-        mime="application/json"
-    )
-
+# 表の編集
 edited_df = st.data_editor(
     st.session_state['portfolio'],
     num_rows="dynamic",
@@ -127,8 +132,46 @@ edited_df = st.data_editor(
     }
 )
 st.session_state['portfolio'] = edited_df
-
 df = st.session_state['portfolio']
+export_json = df.to_json(orient='records', force_ascii=False)
+
+# 変更をブラウザのストレージに保存するためのトリガーボタン
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("🌐 ブラウザに記憶させる", type="primary", use_container_width=True):
+        # JavaScriptへデータを送信してブラウザ保存させる
+        components.html(
+            f"""
+            <script>
+            const STORAGE_KEY = "stock_app_portfolio_v1";
+            localStorage.setItem(STORAGE_KEY, {json.dumps(export_json)});
+            </script>
+            """,
+            height=0,
+        )
+        st.success("このブラウザに銘柄リストを記憶させました！")
+
+with col2:
+    st.download_button(
+        label="💾 エクスポート(バックアップ)",
+        data=export_json,
+        file_name="portfolio_data.json",
+        mime="application/json",
+        use_container_width=True
+    )
+
+with col3:
+    uploaded_file = st.file_uploader("📂 インポート", type="json", label_visibility="collapsed")
+    if uploaded_file is not None:
+        try:
+            imported_data = json.load(uploaded_file)
+            st.session_state['portfolio'] = pd.DataFrame(imported_data)
+            st.success("データを復元しました！「ブラウザに記憶させる」を押して保存してください。")
+        except Exception:
+            st.error("インポートに失敗しました。")
+
+# 分析用の辞書作成
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
 
