@@ -53,6 +53,18 @@ default_data = [
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="wide")
 st.title("📊 株価・投資信託 チェックボード")
 
+# --- 画像と説明文の表示 ---
+try:
+    st.image("25rule_minimized.jpg", use_container_width=True)
+except Exception:
+    st.warning("画像ファイル「25rule_minimized.jpg」が読み込めません。GitHubへのアップロードを確認してください。")
+
+st.info("""
+**💡 株式投資における「25%ルール」**\n
+「直近の最高値から株価が25%以上下落した時点で売却（損切り・利益確定）を検討する」というシンプルな原則です。値上がり局面での早すぎる利益確定を防ぎつつ、急落時には逃げ遅れを回避し、大切な資産を守る効果が期待できます。\n
+本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
+""")
+
 # --- セッション（一時記憶）の初期化 ---
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
@@ -100,7 +112,6 @@ st.session_state['portfolio'] = edited_df
 df = st.session_state['portfolio']
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
-
 
 st.markdown("---")
 st.header("📈 2. 株価・基準価額の確認")
