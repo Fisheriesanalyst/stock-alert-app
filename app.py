@@ -30,7 +30,8 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-st.set_page_config(page_title="株価・投資信託 チェックボード", layout="wide")
+# layout="wide" から layout="centered" に変更し、横幅を制限して見やすくしました
+st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
 # カスタムCSS（Primaryボタンを青地・白抜きに変更）
 st.markdown("""
@@ -63,6 +64,15 @@ st.info("""
 本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
+# 色分けの説明文を追加
+st.markdown("""
+<div style="font-size: 0.95em; margin-bottom: 20px; padding: 0 10px;">
+    <span style="color: #1f77b4; font-weight: bold;">15％未満(青色フォント）</span>：青色のグラフ（青色フォント）<br>
+    <span style="color: #ffb300; font-weight: bold;">15％～25％（黄色フォント）</span>：黄色のグラフ（黄色フォント）<br>
+    <span style="color: #d62728; font-weight: bold;">25％以上（赤色フォント）</span>：赤色のグラフ（赤色フォントで）
+</div>
+""", unsafe_allow_html=True)
+
 # --- セッション（一時記憶）の初期化 ---
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
@@ -77,11 +87,10 @@ try:
             data=pdf_file,
             file_name="運用マニュアル20260803.pdf",
             mime="application/pdf",
-            type="primary"  # 青地・白抜きのデザインを適用
+            type="primary"
         )
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
-
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
