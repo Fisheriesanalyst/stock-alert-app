@@ -85,7 +85,6 @@ with col1:
             st.error("インポートに失敗しました。ファイル形式を確認してください。")
 
 with col2:
-    # 現在の表のデータをJSON形式に変換
     export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
     st.download_button(
         label="💾 現在のデータをエクスポート",
@@ -94,7 +93,6 @@ with col2:
         mime="application/json",
     )
 
-# ブラウザ上で直接編集できる表
 edited_df = st.data_editor(
     st.session_state['portfolio'],
     num_rows="dynamic",
@@ -105,10 +103,8 @@ edited_df = st.data_editor(
         "コード": st.column_config.TextColumn("コード", required=True)
     }
 )
-# 編集結果を保存
 st.session_state['portfolio'] = edited_df
 
-# DataFrameから個別株と投資信託をそれぞれ辞書に分離
 df = st.session_state['portfolio']
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
@@ -161,7 +157,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 if drop_ratio >= 0.25:
                     alerts.append(f"⚠️ **{name}** ({ticker}) が直近高値から **{round(drop_ratio*100, 2)}%** 下落！ (高値: {round(high_price, 2)} -> 現在値: {round(current_price, 2)})")
                 
-                # グラフ描画
                 six_months_ago = hist.index.max() - pd.DateOffset(months=6)
                 hist_6m = hist[hist.index >= six_months_ago]
                 hist_6m.index = hist_6m.index.strftime('%m-%d')
@@ -204,7 +199,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     st.markdown("---")
 
     # ========================================
-    # 投資信託チェック
+    # 投資信託チェック（修正版）
     # ========================================
     st.subheader("📈 投資信託")
     
@@ -244,21 +239,35 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
 
             full_df = pd.DataFrame()
             for html in all_html:
-                dfs = pd.read_html(io.StringIO(html))
-                for temp_df in dfs:
-                    if '日付' in temp_df.columns and '基準価額' in temp_df.columns:
-                        df = temp_df[['日付', '基準価額']].copy()
-                        df.columns = ['Date', 'Price']
-                        df['Date'] = pd.to_datetime(df['Date'].str.replace('年', '/').str.replace('月', '/').str.replace('日', ''), errors='coerce')
-                        df['Price'] = pd.to_numeric(df['Price'].astype(str).str.replace(',', '').str.replace('円', ''), errors='coerce')
-                        full_df = pd.concat([full_df, df])
-                        break
+                try:
+                    dfs = pd.read_html(io.StringIO(html))
+                    for temp_df in dfs:
+                        cols = [str(c) for c in temp_df.columns]
+                        # 「日付」と「基準価額」が含まれるテーブルを探す
+                        if any('日付' in c for c in cols) and any('基準価額' in c for c in cols):
+                            date_col = [c for c in cols if '日付' in c][0]
+                            price_col = [c for c in cols if '基準価額' in c][0]
+                            
+                            df_piece = temp_df[[date_col, price_col]].copy()
+                            df_piece.columns = ['Date', 'Price']
+                            full_df = pd.concat([full_df, df_piece])
+                            break
+                except:
+                    continue
 
+            if full_df.empty:
+                st.warning(f"⚠️ {name} のデータがテーブルとして抽出できませんでした。")
+                continue
+
+            # データの整形
+            full_df['Date'] = pd.to_datetime(full_df['Date'].astype(str).str.replace('年', '/').str.replace('月', '/').str.replace('日', ''), errors='coerce')
+            full_df['Price'] = pd.to_numeric(full_df['Price'].astype(str).str.replace(',', '').str.replace('円', ''), errors='coerce')
+            
             full_df = full_df.dropna().drop_duplicates(subset=['Date']).sort_values('Date')
             calc_df = full_df[full_df['Date'] >= limit_date_1y]
 
             if calc_df.empty:
-                st.warning(f"⚠️ {name} のデータが抽出できませんでした。")
+                st.warning(f"⚠️ {name} の有効な日付データがありません。")
                 continue
 
             high_1y = calc_df['Price'].max()
