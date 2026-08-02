@@ -6,7 +6,6 @@ import matplotlib.dates as mdates
 import io
 import time
 import json
-import base64
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -70,25 +69,19 @@ if 'portfolio' not in st.session_state:
 
 st.markdown("---")
 
-# --- 運用マニュアルの表示機能（アプリ内展開） ---
-if 'show_manual' not in st.session_state:
-    st.session_state['show_manual'] = False
+# --- 運用マニュアルのダウンロードリンク ---
+try:
+    with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
+        st.download_button(
+            label="📄 運用マニュアルをダウンロード",
+            data=pdf_file,
+            file_name="運用マニュアル20260803.pdf",
+            mime="application/pdf",
+            type="primary"  # 青地・白抜きのデザインを適用
+        )
+except FileNotFoundError:
+    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-def toggle_manual():
-    st.session_state['show_manual'] = not st.session_state['show_manual']
-
-# 青地・白抜きのボタン（type="primary"を指定）
-st.button("📄 運用マニュアルを表示", type="primary", on_click=toggle_manual)
-
-if st.session_state['show_manual']:
-    try:
-        with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
-            base64_pdf = base64.b64encode(pdf_file.read()).decode('utf-8')
-        # 画面内にPDFを大きく表示する
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf" style="border: 2px solid #1f77b4; border-radius: 8px; margin-bottom: 20px;"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-    except FileNotFoundError:
-        st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
@@ -111,7 +104,7 @@ with col2:
         label="💾 現在のデータをエクスポート",
         data=export_json,
         file_name="portfolio_data.json",
-        mime="application/json",
+        mime="application/json"
     )
 
 edited_df = st.data_editor(
@@ -133,7 +126,7 @@ funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'
 st.markdown("---")
 st.markdown("#### 2. 株価・基準価額の確認")
 
-# 更新ボタンも青地・白抜きの統一デザインになります
+# 更新ボタンも青地・白抜きの統一デザインが適用されます
 if st.button("🔄 最新データを取得してチェックする", type="primary"):
     
     # ========================================
