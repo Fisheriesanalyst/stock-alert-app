@@ -51,6 +51,20 @@ st.info("""
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
 
+st.markdown("---")
+
+# --- 運用マニュアルのダウンロードリンク ---
+try:
+    with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
+        st.download_button(
+            label="📄 運用マニュアルをダウンロード",
+            data=pdf_file,
+            file_name="運用マニュアル20260803.pdf",
+            mime="application/pdf",
+        )
+except FileNotFoundError:
+    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
+
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
 st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。別の端末で使う場合は「エクスポート」でファイルを保存し、「インポート」で読み込んでください。")
