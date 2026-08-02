@@ -30,7 +30,7 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-# layout="wide" から layout="centered" に変更し、横幅を制限して見やすくしました
+# 横幅を制限して見やすくしています
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
 # カスタムCSS（Primaryボタンを青地・白抜きに変更）
@@ -64,12 +64,12 @@ st.info("""
 本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
-# 色分けの説明文を追加
+# 色分けの説明文を追加（文章をシンプルにし、行全体に色を適用）
 st.markdown("""
-<div style="font-size: 0.95em; margin-bottom: 20px; padding: 0 10px;">
-    <span style="color: #1f77b4; font-weight: bold;">15％未満(青色フォント）</span>：青色のグラフ（青色フォント）<br>
-    <span style="color: #ffb300; font-weight: bold;">15％～25％（黄色フォント）</span>：黄色のグラフ（黄色フォント）<br>
-    <span style="color: #d62728; font-weight: bold;">25％以上（赤色フォント）</span>：赤色のグラフ（赤色フォントで）
+<div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
+    <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
+    <span style="color: #ffb300;">15％～25％：黄色のグラフ</span><br>
+    <span style="color: #d62728;">25％以上：赤色のグラフ</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -135,7 +135,6 @@ funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'
 st.markdown("---")
 st.markdown("#### 2. 株価・基準価額の確認")
 
-# 更新ボタンも青地・白抜きの統一デザインが適用されます
 if st.button("🔄 最新データを取得してチェックする", type="primary"):
     
     # ========================================
