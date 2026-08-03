@@ -31,7 +31,7 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（ツールバー非表示 ＆ スマホ対応・3ボタン高さ60px統一）
+# カスタムCSS
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
@@ -48,7 +48,7 @@ st.markdown("""
     }
 }
 
-/* 3つのボタンの高さを60pxに統一 */
+/* 記憶、エクスポートのボタンサイズを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -79,7 +79,7 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一） */
+/* 3. 右：ファイルアップローダー（Androidで機能が壊れないように安全にデザイン調整） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
@@ -88,29 +88,17 @@ div[data-testid="stFileUploader"] > label {
 }
 div[data-testid="stFileUploader"] section {
     background-color: #ff7f0e !important;
-    border: none !important;
+    border: 2px dashed #d6680b !important;
     border-radius: 6px !important;
-    height: 60px !important;
-    min-height: 60px !important;
-    max-height: 60px !important;
-    padding: 0px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer !important;
+    padding: 10px !important;
 }
+/* 内部の文字を白くする */
 div[data-testid="stFileUploader"] section * {
-    display: none !important;
-}
-div[data-testid="stFileUploader"] section::after {
-    content: "📂 インポート" !important;
     color: white !important;
-    font-weight: bold !important;
-    font-size: 15px !important;
-    display: block !important;
 }
-div[data-testid="stFileUploader"] section:hover {
-    background-color: #d6680b !important;
+/* 邪魔な200MB制限などの下部テキストのみ安全に非表示 */
+div[data-testid="stFileUploader"] small {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -210,33 +198,30 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - ファイル選択時のエディタキャッシュクリア処理を追加
+# 3. インポート（オレンジ） - Androidの仕様に合わせ自動保存を廃止、手動での確実な保存に切り替え
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
         try:
             bytes_data = uploaded_file.getvalue()
-            json_str = bytes_data.decode('utf-8-sig')
-            imported_data = json.loads(json_str)
-            
-            # データを更新し、エディタのキャッシュを破棄して強制反映させる
-            st.session_state['portfolio'] = pd.DataFrame(imported_data)
-            if "portfolio_editor" in st.session_state:
-                del st.session_state["portfolio_editor"]
-            st.session_state['cookie_loaded'] = True
-            
-            new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-            compressed = zlib.compress(new_json_str.encode('utf-8'))
-            encoded = base64.b64encode(compressed).decode('utf-8')
-            cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
-            
-            st.success("データを復元し、ブラウザに記憶しました！")
-            time.sleep(0.3)
-            st.rerun()
+            if not bytes_data:
+                st.error("ファイルが空か、正しく読み取れませんでした。")
+            else:
+                json_str = bytes_data.decode('utf-8-sig')
+                imported_data = json.loads(json_str)
+                
+                # データを表に反映（※ここではあえてCookie保存もリロードも行わない）
+                st.session_state['portfolio'] = pd.DataFrame(imported_data)
+                if "portfolio_editor" in st.session_state:
+                    del st.session_state["portfolio_editor"]
+                st.session_state['cookie_loaded'] = True
+                
+                # ユーザーに手動での保存を促す
+                st.success("✅ 銘柄リストを画面に読み込みました！\n\n**そのまま左端の「🌐 ブラウザに記憶させる」ボタンを押し、保存を完了させてください。**")
         except Exception as e:
-            st.error(f"インポートに失敗しました（エラー: {e}）")
+            st.error(f"インポートに失敗しました。正しいJSONファイルか確認してください。（詳細: {e}）")
 
-# データエディタ（keyを指定してキャッシュの競合を防ぐ）
+# データエディタ
 edited_df = st.data_editor(
     st.session_state['portfolio'],
     key="portfolio_editor",
