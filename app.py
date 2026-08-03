@@ -31,14 +31,24 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（ツールバー非表示 ＆ 3つのボタンの高さを60pxに完全統一）
+# カスタムCSS（ツールバー非表示 ＆ スマホでカラムを縦並びにしてアップローダーを押しやすくする）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* 3つのボタン（記憶、エクスポート）の高さを60pxに統一 */
+/* スマホ画面（幅768px以下）では横並びカラムを縦並びにして操作性を向上させる */
+@media (max-width: 768px) {
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        margin-bottom: 10px !important;
+    }
+}
+
+/* 3つのボタンの高さを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -69,7 +79,7 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ 余計な文字を完全排除） */
+/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ スマホでも押しやすいデザイン） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
@@ -154,7 +164,6 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
-# まだクッキーを読み込んでいない場合のみ取得を試みる（競合防止）
 if not st.session_state.get('cookie_loaded', False):
     saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
     if saved_b64 is not None:
@@ -211,13 +220,13 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - Android対応＆インポート直後の即時反映（rerun）を追加
+# 3. インポート（オレンジ） - スマホでも確実に読み込めるようBOM対応＆例外詳細表示
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
         try:
-            bytes_data = uploaded_file.read()
-            json_str = bytes_data.decode('utf-8')
+            bytes_data = uploaded_file.getvalue()
+            json_str = bytes_data.decode('utf-8-sig')
             imported_data = json.loads(json_str)
             
             st.session_state['portfolio'] = pd.DataFrame(imported_data)
@@ -230,9 +239,9 @@ with col3:
             
             st.success("データを復元し、ブラウザに記憶しました！")
             time.sleep(0.3)
-            st.rerun() # Androidでも即座に画面に反映させる
+            st.rerun()
         except Exception as e:
-            st.error("インポートに失敗しました。正しいJSONファイルを選択してください。")
+            st.error(f"インポートに失敗しました（エラー: {e}）")
 
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
