@@ -29,7 +29,7 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
+st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
