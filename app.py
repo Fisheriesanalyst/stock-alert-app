@@ -38,7 +38,7 @@ st.markdown("""
     display: none !important;
 }
 
-/* ボタンの高さを60pxに統一 */
+/* 3つのボタン（記憶、エクスポート）の高さを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -69,9 +69,12 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ 文字非表示） */
+/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ 余計な文字を完全排除） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
+}
+div[data-testid="stFileUploader"] > label {
+    display: none !important;
 }
 div[data-testid="stFileUploader"] section {
     background-color: #ff7f0e !important;
@@ -84,15 +87,22 @@ div[data-testid="stFileUploader"] section {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    cursor: pointer !important;
 }
+/* 内部のすべての標準テキスト（200MB制限やDrag and dropなど）を完全に隠す */
 div[data-testid="stFileUploader"] section * {
+    display: none !important;
+}
+/* 代わりに綺麗に統一された「📂 インポート」の文字を中央に表示する */
+div[data-testid="stFileUploader"] section::after {
+    content: "📂 インポート" !important;
     color: white !important;
     font-weight: bold !important;
+    font-size: 15px !important;
+    display: block !important;
 }
-/* 「200MB per file • JSON」などの下部説明テキストを完全に非表示にする */
-div[data-testid="stFileUploader"] small,
-div[data-testid="stFileUploader"] div[data-testid="stMarkdownContainer"] {
-    display: none !important;
+div[data-testid="stFileUploader"] section:hover {
+    background-color: #d6680b !important;
 }
 </style>
 """, unsafe_allow_html=True)
