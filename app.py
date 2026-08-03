@@ -154,17 +154,18 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
-saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
-
-if saved_b64 is not None and not st.session_state.get('cookie_loaded', False):
-    try:
-        decoded = base64.b64decode(saved_b64)
-        decompressed = zlib.decompress(decoded).decode('utf-8')
-        st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
-        st.session_state['cookie_loaded'] = True
-        st.rerun()
-    except Exception:
-        pass
+# まだクッキーを読み込んでいない場合のみ取得を試みる（競合防止）
+if not st.session_state.get('cookie_loaded', False):
+    saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
+    if saved_b64 is not None:
+        try:
+            decoded = base64.b64decode(saved_b64)
+            decompressed = zlib.decompress(decoded).decode('utf-8')
+            st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
+            st.session_state['cookie_loaded'] = True
+            st.rerun()
+        except Exception:
+            st.session_state['cookie_loaded'] = True
 
 
 # --- 1. 銘柄の管理機能 ---
@@ -210,7 +211,7 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - Android等の異なる文字コード環境でも確実に取り込めるよう修正
+# 3. インポート（オレンジ） - Android対応＆インポート直後の即時反映（rerun）を追加
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
@@ -220,14 +221,16 @@ with col3:
             imported_data = json.loads(json_str)
             
             st.session_state['portfolio'] = pd.DataFrame(imported_data)
+            st.session_state['cookie_loaded'] = True
             
             new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
             compressed = zlib.compress(new_json_str.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
             cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
-            st.session_state['cookie_loaded'] = True
             
             st.success("データを復元し、ブラウザに記憶しました！")
+            time.sleep(0.3)
+            st.rerun() # Androidでも即座に画面に反映させる
         except Exception as e:
             st.error("インポートに失敗しました。正しいJSONファイルを選択してください。")
 
