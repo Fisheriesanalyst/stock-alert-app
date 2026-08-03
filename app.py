@@ -89,11 +89,9 @@ div[data-testid="stFileUploader"] section {
     justify-content: center !important;
     cursor: pointer !important;
 }
-/* 内部のすべての標準テキスト（200MB制限やDrag and dropなど）を完全に隠す */
 div[data-testid="stFileUploader"] section * {
     display: none !important;
 }
-/* 代わりに綺麗に統一された「📂 インポート」の文字を中央に表示する */
 div[data-testid="stFileUploader"] section::after {
     content: "📂 インポート" !important;
     color: white !important;
@@ -119,7 +117,7 @@ except Exception:
 st.info("""
 **💡 株式投資における「25%ルール」**\n
 「直近の最高値から株価が25%以上下落した時点で売却（損切り・利益確定）を検討する」というシンプルな原則です。値上がり局面での早すぎる利益確定を防ぎつつ、急落時には逃げ遅れを回避し、大切な資産を守る効果が期待できます。\n
-本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
+本アプリでは、登録した保有銘柄の過去1年間の最高値を基準に現在の下落率を自動計算し、3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
 # 色分けの説明文を追加
@@ -152,15 +150,12 @@ except FileNotFoundError:
 # --- クッキー（ブラウザ記憶）の確実な読み込み処理 ---
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
-# 初回はデフォルトデータを仮置きする
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
-# ブラウザから記憶データを取得
 saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
 
-# 記憶データが存在し、かつ「まだこのセッションで読み込んでいない」場合のみ上書きする
 if saved_b64 is not None and not st.session_state.get('cookie_loaded', False):
     try:
         decoded = base64.b64decode(saved_b64)
@@ -215,9 +210,9 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ）
+# 3. インポート（オレンジ） - Androidでも選択できるようtypeを拡張・または制限解除
 with col3:
-    uploaded_file = st.file_uploader("📂 インポート", type="json", label_visibility="collapsed")
+    uploaded_file = st.file_uploader("📂 インポート", type=["json", "txt", "dat"], label_visibility="collapsed")
     if uploaded_file is not None:
         try:
             imported_data = json.load(uploaded_file)
@@ -231,7 +226,7 @@ with col3:
             
             st.success("データを復元し、ブラウザに記憶しました！")
         except Exception:
-            st.error("インポートに失敗しました。")
+            st.error("インポートに失敗しました。ファイル形式を確認してください。")
 
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
