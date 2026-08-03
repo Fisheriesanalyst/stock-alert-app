@@ -17,19 +17,15 @@ from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
 import extra_streamlit_components as stx
 
-# --- デフォルトの銘柄データ ---
+# --- デフォルトの銘柄データ（ご指定の7銘柄に変更） ---
 default_data = [
     {"区分": "個別株", "銘柄名": "極洋", "コード": "1301.T"},
-    {"区分": "個別株", "銘柄名": "ディー・エヌ・エー", "コード": "2432.T"},
-    {"区分": "個別株", "銘柄名": "日本たばこ産業", "コード": "2914.T"},
-    {"区分": "個別株", "銘柄名": "花王", "コード": "4452.T"},
-    {"区分": "個別株", "銘柄名": "武田薬品工業", "コード": "4502.T"},
-    {"区分": "個別株", "銘柄名": "野村ホールディングス", "コード": "8604.T"},
-    {"区分": "個別株", "銘柄名": "アッヴィ", "コード": "ABBV"},
-    {"区分": "個別株", "銘柄名": "コカ・コーラ", "コード": "KO"},
-    {"区分": "個別株", "銘柄名": "ベライゾン", "コード": "VZ"},
+    {"区分": "個別株", "銘柄名": "日本たばこ", "コード": "2914.T"},
+    {"区分": "個別株", "銘柄名": "イオン", "コード": "8267.T"},
+    {"区分": "個別株", "銘柄名": "キンバリークラーク", "コード": "KMB"},
+    {"区分": "個別株", "銘柄名": "コカコーラ", "コード": "KO"},
     {"区分": "個別株", "銘柄名": "スペースX", "コード": "SPCX"},
-    {"区分": "投資信託", "銘柄名": "グロース・オポチュニティD", "コード": "32314233"}
+    {"区分": "投資信託", "銘柄名": "インベスコ 世界厳選株式＜H無＞", "コード": "18312991"}
 ]
 
 # --- 画面設定 ---
@@ -66,7 +62,11 @@ st.info("""
 本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
+# 色分けの説明文を追加
 st.markdown("""
+<div style="font-size: 1.1em; font-weight: bold; margin-bottom: 5px; padding: 0 10px;">
+    アラートはグラフの色でも表示します
+</div>
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
     <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
     <span style="color: #ffb300;">15％～25％：黄色のグラフ</span><br>
@@ -257,10 +257,17 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                 st.error(f"[{name}] エラーが発生しました: {e}")
 
         status_text.text("個別株の取得完了！")
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
+        
+        st.dataframe(
+            pd.DataFrame(results),
+            use_container_width=True,
+            column_config={
+                "判定": st.column_config.TextColumn("判定", width="medium")
+            }
+        )
 
         if alerts:
-            st.error("### 📉 25%下落アラート\n" + "\n".join(alerts))
+            st.error("#### 📉 25%下落アラート\n" + "\n".join(alerts))
         else:
             st.success("現在、直近高値から25%以上下落している個別銘柄はありません。")
     else:
@@ -374,3 +381,15 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         st.info("投資信託が登録されていません。")
 
     st.success("すべての処理が完了しました！")
+
+# --- フッター（センタリング表示） ---
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #666; font-size: 0.85em; margin-bottom: 20px;'>
+        ※本アプリが提供するデータは参考情報であり、実際の投資判断は自己責任でお願いいたします。<br>
+        © 2026 株価チェックボード All Rights Reserved. 無断複製・転載を禁じます。
+    </div>
+    """,
+    unsafe_allow_html=True
+)
