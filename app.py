@@ -210,9 +210,9 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - Androidでも選択できるようtypeを拡張・または制限解除
+# 3. インポート（オレンジ） - Androidでも確実選べるようファイル種別制限を解除
 with col3:
-    uploaded_file = st.file_uploader("📂 インポート", type=["json", "txt", "dat"], label_visibility="collapsed")
+    uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
         try:
             imported_data = json.load(uploaded_file)
@@ -226,7 +226,7 @@ with col3:
             
             st.success("データを復元し、ブラウザに記憶しました！")
         except Exception:
-            st.error("インポートに失敗しました。ファイル形式を確認してください。")
+            st.error("インポートに失敗しました。正しいJSONファイルを選択してください。")
 
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
