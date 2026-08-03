@@ -89,28 +89,28 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-# --- クッキー（ブラウザ記憶）の準備と読み込み ---
-# キャッシュを使用せず、直接クッキーマネージャーを呼び出すように修正
+# --- クッキー（ブラウザ記憶）の確実な読み込み処理 ---
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
+# 初回はデフォルトデータを仮置きする
 if 'portfolio' not in st.session_state:
-    # 初回アクセス時にブラウザから記憶を読み出すためのわずかな待機
-    if not st.session_state.get('cookie_synced', False):
-        st.session_state['cookie_synced'] = True
-        time.sleep(0.3)
-        st.rerun()
+    st.session_state['portfolio'] = pd.DataFrame(default_data)
+    st.session_state['cookie_loaded'] = False
 
-    saved_b64 = cookie_manager.get(cookie="stock_portfolio_v3")
-    if saved_b64:
-        try:
-            # 圧縮されたデータを解凍して復元
-            decoded = base64.b64decode(saved_b64)
-            decompressed = zlib.decompress(decoded).decode('utf-8')
-            st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
-        except Exception:
-            st.session_state['portfolio'] = pd.DataFrame(default_data)
-    else:
-        st.session_state['portfolio'] = pd.DataFrame(default_data)
+# ブラウザから記憶データを取得
+saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
+
+# 記憶データが存在し、かつ「まだこのセッションで読み込んでいない」場合のみ上書きする
+if saved_b64 is not None and not st.session_state.get('cookie_loaded', False):
+    try:
+        decoded = base64.b64decode(saved_b64)
+        decompressed = zlib.decompress(decoded).decode('utf-8')
+        st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
+        st.session_state['cookie_loaded'] = True
+        # データを読み込んだら即座に画面を再描画して反映
+        st.rerun()
+    except Exception:
+        pass
 
 
 # --- 1. 銘柄の管理機能 ---
@@ -140,12 +140,15 @@ with col1:
             # データを圧縮してブラウザのクッキーに10年間保存
             compressed = zlib.compress(export_json.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
-            cookie_manager.set("stock_portfolio_v3", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            
+            # 保存直後に再読み込みが走らないようにフラグを立てる
+            st.session_state['cookie_loaded'] = True
             st.success("✅ このブラウザに銘柄リストを記憶させました！")
         except Exception:
             st.error("記憶に失敗しました。")
 
-# エクスポート・インポート機能（万が一のバックアップ用として残しています）
+# エクスポート・インポート機能
 with col2:
     st.download_button(
         label="💾 エクスポート(バックアップ)",
@@ -166,9 +169,10 @@ with col3:
             new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
             compressed = zlib.compress(new_json_str.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
-            cookie_manager.set("stock_portfolio_v3", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            st.session_state['cookie_loaded'] = True
             
-            st.success("データを復元し、記憶しました！一度画面をリフレッシュしてください。")
+            st.success("データを復元し、ブラウザに記憶しました！")
         except Exception:
             st.error("インポートに失敗しました。")
 
