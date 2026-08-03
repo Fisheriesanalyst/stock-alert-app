@@ -215,7 +215,6 @@ with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
         try:
-            # バイト列として安全に読み込んでから文字列に変換
             bytes_data = uploaded_file.read()
             json_str = bytes_data.decode('utf-8')
             imported_data = json.loads(json_str)
@@ -405,4 +404,47 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             current_price = calc_df['Price'].iloc[-1]
             drop_rate = (current_price - high_1y) / high_1y * 100
 
-.
+            plot_df = calc_df[calc_df['Date'] >= limit_date_6m]
+
+            if plot_df.empty:
+                st.warning(f"⚠️ {name} の過去6ヶ月分のデータがありません。")
+                continue
+
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(plot_df['Date'], plot_df['Price'], marker='o', markersize=3, linestyle='-', color='#1f77b4')
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+            fig.autofmt_xdate()
+            
+            ax.set_title(f"{name} - 基準価額の推移 (過去6ヶ月)", fontsize=14, fontweight='bold')
+            ax.grid(True, linestyle='--', alpha=0.7)
+            
+            last_date = plot_df['Date'].iloc[-1]
+            ax.annotate(f' {int(current_price):,}', xy=(last_date, current_price), xytext=(5, 0), textcoords='offset points', va='center', ha='left', color='#1f77b4', fontweight='bold', fontsize=11)
+
+            text_str = f"1年以内高値: {int(high_1y):,}円\n現在値: {int(current_price):,}円\n下落率: {drop_rate:.2f}%"
+            props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray')
+            ax.text(0.02, 0.95, text_str, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
+            ax.set_xlim(plot_df['Date'].min(), last_date + timedelta(days=15))
+            
+            with st.expander(f"{name} の推移を見る", expanded=True):
+                st.pyplot(fig)
+            plt.close()
+
+        driver.quit()
+        status_text_fund.text("投資信託の取得完了！")
+    else:
+        st.info("投資信託が登録されていません。")
+
+    st.success("すべての処理が完了しました！")
+
+# --- フッター（センタリング表示） ---
+st.markdown("---")
+st.markdown(
+    """
+    <div style='text-align: center; color: #666; font-size: 0.85em; margin-bottom: 20px;'>
+        ※本アプリが提供するデータは参考情報であり、実際の投資判断は自己責任でお願いいたします。<br>
+        © 2026 株価チェックボード All Rights Reserved. 無断複製・転載を禁じます。
+    </div>
+    """,
+    unsafe_allow_html=True
+)
