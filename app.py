@@ -35,14 +35,13 @@ st.set_page_config(page_title="株価・投資信託 チェックボード", lay
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# カスタムCSS（ツールバー非表示 ＆ スマホ・ボタンデザイン調整）
+# カスタムCSS
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
@@ -52,7 +51,7 @@ st.markdown("""
     }
 }
 
-/* 左・中央ボタンの高さを60pxに統一 */
+/* 3つのボタンの高さを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -63,33 +62,15 @@ div.stDownloadButton > button {
     border: none !important;
 }
 
-/* 1. 左ボタン：ブラウザに記憶させる（青色） */
-div.stButton > button {
-    background-color: #1f77b4 !important;
-    color: white !important;
-}
-div.stButton > button:hover {
-    background-color: #155a8a !important;
-    color: white !important;
-}
+div.stButton > button { background-color: #1f77b4 !important; color: white !important; }
+div.stButton > button:hover { background-color: #155a8a !important; color: white !important; }
 
-/* 2. 中央ボタン：銘柄リストをエクスポート（緑色） */
-div.stDownloadButton > button {
-    background-color: #2ca02c !important;
-    color: white !important;
-}
-div.stDownloadButton > button:hover {
-    background-color: #217c21 !important;
-    color: white !important;
-}
+div.stDownloadButton > button { background-color: #2ca02c !important; color: white !important; }
+div.stDownloadButton > button:hover { background-color: #217c21 !important; color: white !important; }
 
-/* 3. 右：ファイルアップローダーのデザイン調整 */
-div[data-testid="stFileUploader"] {
-    width: 100% !important;
-}
-div[data-testid="stFileUploader"] > label {
-    display: none !important;
-}
+/* ファイルアップローダーのデザイン */
+div[data-testid="stFileUploader"] { width: 100% !important; }
+div[data-testid="stFileUploader"] > label { display: none !important; }
 div[data-testid="stFileUploader"] section {
     background-color: #fff3e0 !important;
     border: 2px dashed #ff7f0e !important;
@@ -97,9 +78,7 @@ div[data-testid="stFileUploader"] section {
     min-height: 60px !important;
     padding: 5px !important;
 }
-div[data-testid="stFileUploader"] small {
-    display: none !important;
-}
+div[data-testid="stFileUploader"] small { display: none !important; }
 div[data-testid="stFileUploader"] section button {
     background-color: #ff7f0e !important;
     color: white !important;
@@ -107,9 +86,7 @@ div[data-testid="stFileUploader"] section button {
     font-weight: bold !important;
     border-radius: 4px !important;
 }
-div[data-testid="stFileUploader"] section button:hover {
-    background-color: #d6680b !important;
-}
+div[data-testid="stFileUploader"] section button:hover { background-color: #d6680b !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -205,17 +182,14 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - Androidの文字コード問題に対応した安全なマルチエンコード読み込み
+# 3. ファイルからのインポート（PC用）
 with col3:
-    uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
-    
+    uploaded_file = st.file_uploader("📂 インポート(ファイル)", label_visibility="collapsed")
     if uploaded_file is not None:
         file_id = uploaded_file.file_id
         if st.session_state.get('last_uploaded_id') != file_id:
             try:
                 bytes_data = uploaded_file.getvalue()
-                
-                # Android等での文字コード差異に対応するため、複数のエンコードを順に試す
                 json_str = None
                 for enc in ['utf-8-sig', 'utf-8', 'cp932', 'shift_jis']:
                     try:
@@ -224,30 +198,54 @@ with col3:
                     except UnicodeDecodeError:
                         continue
                 
-                if json_str is None:
-                    st.error("ファイルの文字コードを正常に読み込めませんでした。")
-                else:
+                if json_str:
                     imported_data = json.loads(json_str)
+                    st.session_state['portfolio'] = pd.DataFrame(imported_data)
+                    st.session_state['import_count'] += 1
+                    st.session_state['last_uploaded_id'] = file_id
+                    st.session_state['cookie_loaded'] = True
                     
-                    if isinstance(imported_data, list):
-                        st.session_state['portfolio'] = pd.DataFrame(imported_data)
-                        st.session_state['import_count'] += 1
-                        st.session_state['last_uploaded_id'] = file_id
-                        st.session_state['cookie_loaded'] = True
-                        
-                        # クッキーへ即時保存
-                        new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                        compressed = zlib.compress(new_json_str.encode('utf-8'))
-                        encoded = base64.b64encode(compressed).decode('utf-8')
-                        cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
-                        
-                        st.success("✅ データを復元しました！")
-                        time.sleep(0.3)
-                        st.rerun()
-                    else:
-                        st.error("JSONファイルのデータ構造が正しくありません。")
+                    new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    compressed = zlib.compress(new_json_str.encode('utf-8'))
+                    encoded = base64.b64encode(compressed).decode('utf-8')
+                    cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+                    
+                    st.success("✅ ファイルからデータを復元しました！")
+                    time.sleep(0.3)
+                    st.rerun()
             except Exception as e:
-                st.error(f"インポートに失敗しました。詳細: {e}")
+                st.error(f"ファイルインポートに失敗: {e}")
+
+# --- Android等でファイル選択が機能しない場合の「テキスト貼り付けルート」 ---
+with st.expander("📲 Androidでファイルが選べない場合のインポート（テキスト貼り付け）"):
+    st.info("PCで保存したJSONファイルをメモ帳等で開き、中の文字をすべてコピーして下の枠に貼り付けてください。")
+    json_text_input = st.text_area("JSONテキストをここに貼り付け", height=100, label_visibility="collapsed")
+    
+    if st.button("📝 テキストデータからインポートを強制実行", type="primary"):
+        if json_text_input.strip():
+            try:
+                # 貼り付けられたテキストをJSONとして直接読み込む
+                imported_data_from_text = json.loads(json_text_input.strip())
+                if isinstance(imported_data_from_text, list):
+                    st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
+                    st.session_state['import_count'] += 1
+                    st.session_state['cookie_loaded'] = True
+                    
+                    # すぐにクッキーへ保存
+                    new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    compressed = zlib.compress(new_json_str.encode('utf-8'))
+                    encoded = base64.b64encode(compressed).decode('utf-8')
+                    cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+                    
+                    st.success("✅ テキストからデータを完全に復元しました！")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("JSONデータの形式が間違っています。")
+            except Exception as e:
+                st.error(f"テキストの読み込みに失敗しました。コピー漏れがないか確認してください。（エラー詳細: {e}）")
+        else:
+            st.warning("枠内にJSONテキストが貼り付けられていません。")
 
 # データエディタ
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
