@@ -29,19 +29,30 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
+st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📊", layout="centered")
 
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# カスタムCSS
+# カスタムCSS（不要なバッジ非表示 ＆ スマホ・ボタンデザイン調整）
 st.markdown("""
 <style>
+/* 右上のヘッダーメニューを非表示 */
 [data-testid="stHeader"] {
     display: none !important;
 }
 
+/* ★追加：右下のStreamlitアイコン（バッジ）やフッターを完全に非表示にする */
+.viewerBadge_container, 
+.viewerBadge_link, 
+#viewerBadge,
+footer,
+[data-testid="stAppDeployButton"] {
+    display: none !important;
+}
+
+/* スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
@@ -224,14 +235,12 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
     if st.button("📝 テキストデータからインポートを強制実行", type="primary"):
         if json_text_input.strip():
             try:
-                # 貼り付けられたテキストをJSONとして直接読み込む
                 imported_data_from_text = json.loads(json_text_input.strip())
                 if isinstance(imported_data_from_text, list):
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     st.session_state['cookie_loaded'] = True
                     
-                    # すぐにクッキーへ保存
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
                     compressed = zlib.compress(new_json_str.encode('utf-8'))
                     encoded = base64.b64encode(compressed).decode('utf-8')
