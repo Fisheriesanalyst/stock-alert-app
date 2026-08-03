@@ -31,14 +31,14 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（ツールバー非表示 ＆ 3つのボタン・アップローダーのサイズ統一）
+# カスタムCSS（ツールバー非表示 ＆ 3つのボタンの高さを60pxに完全統一）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* ボタンの高さを大きめ（60px）に統一 */
+/* ボタンの高さを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -69,23 +69,30 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（オレンジ基調のきれいな枠線デザインに統一） */
+/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ 文字非表示） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
 div[data-testid="stFileUploader"] section {
-    background-color: #fff3e0 !important;
-    border: 2px dashed #ff7f0e !important;
+    background-color: #ff7f0e !important;
+    border: none !important;
     border-radius: 6px !important;
+    height: 60px !important;
     min-height: 60px !important;
-    padding: 4px !important;
+    max-height: 60px !important;
+    padding: 0px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
 }
 div[data-testid="stFileUploader"] section * {
-    color: #d6680b !important;
+    color: white !important;
     font-weight: bold !important;
+}
+/* 「200MB per file • JSON」などの下部説明テキストを完全に非表示にする */
+div[data-testid="stFileUploader"] small,
+div[data-testid="stFileUploader"] div[data-testid="stMarkdownContainer"] {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -188,7 +195,7 @@ with col1:
         except Exception:
             st.error("記憶に失敗しました。")
 
-# 2. エクスポートボタン（緑） - ラベルを「銘柄リストをエクスポート」に変更
+# 2. エクスポートボタン（緑）
 with col2:
     st.download_button(
         label="💾 銘柄リストをエクスポート",
