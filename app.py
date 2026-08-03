@@ -17,7 +17,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
 import extra_streamlit_components as stx
 
-# --- デフォルトの銘柄データ（ご指定の7銘柄に変更） ---
+# --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
     {"区分": "個別株", "銘柄名": "極洋", "コード": "1301.T"},
     {"区分": "個別株", "銘柄名": "日本たばこ", "コード": "2914.T"},
@@ -31,9 +31,14 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS
+# カスタムCSS（右上のツールバー非表示 ＆ Primaryボタンのデザイン設定）
 st.markdown("""
 <style>
+/* 画面右上のツールバー（Share、GitHub、メニュー等）を完全に非表示にする */
+[data-testid="stHeader"] {
+    display: none !important;
+}
+
 button[kind="primary"] {
     background-color: #1f77b4 !important;
     color: white !important;
@@ -107,7 +112,6 @@ if saved_b64 is not None and not st.session_state.get('cookie_loaded', False):
         decompressed = zlib.decompress(decoded).decode('utf-8')
         st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
         st.session_state['cookie_loaded'] = True
-        # データを読み込んだら即座に画面を再描画して反映
         st.rerun()
     except Exception:
         pass
@@ -137,12 +141,10 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🌐 変更をこのブラウザに記憶させる", type="primary", use_container_width=True):
         try:
-            # データを圧縮してブラウザのクッキーに10年間保存
             compressed = zlib.compress(export_json.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
             cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
             
-            # 保存直後に再読み込みが走らないようにフラグを立てる
             st.session_state['cookie_loaded'] = True
             st.success("✅ このブラウザに銘柄リストを記憶させました！")
         except Exception:
@@ -165,7 +167,6 @@ with col3:
             imported_data = json.load(uploaded_file)
             st.session_state['portfolio'] = pd.DataFrame(imported_data)
             
-            # インポート時にも自動でブラウザに記憶させる
             new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
             compressed = zlib.compress(new_json_str.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
