@@ -205,9 +205,9 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - ファイルIDを使った多重処理防止 ＆ キャッシュ強制クリア処理
+# 3. インポート（オレンジ） - type制限を完全撤廃し、Androidでのグレーアウトを確実に回避
 with col3:
-    uploaded_file = st.file_uploader("📂 インポート (JSON選択)", type=["json"], label_visibility="collapsed")
+    uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     
     if uploaded_file is not None:
         file_id = uploaded_file.file_id
@@ -234,7 +234,7 @@ with col3:
                 time.sleep(0.5)
                 st.rerun()
             except Exception as e:
-                st.error(f"インポートに失敗しました。詳細: {e}")
+                st.error(f"インポートに失敗しました。JSONファイルを選択してください。詳細: {e}")
 
 # データエディタ（keyに動的カウンタを持たせることで、Androidの頑固なキャッシュを強制クリアして更新させる）
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
