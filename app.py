@@ -35,7 +35,7 @@ st.set_page_config(page_title="株価・投資信託 チェックボード", lay
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# カスタムCSS（ツールバー非表示 ＆ 安全なアップローダーデザイン）
+# カスタムCSS（ツールバー非表示 ＆ スマホ・ボタンデザイン調整）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
@@ -83,7 +83,7 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（Androidのバグを回避する標準的な安全構造） */
+/* 3. 右：ファイルアップローダーのデザイン調整 */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
@@ -91,26 +91,24 @@ div[data-testid="stFileUploader"] > label {
     display: none !important;
 }
 div[data-testid="stFileUploader"] section {
-    background-color: #ff7f0e !important;
-    border: none !important;
+    background-color: #fff3e0 !important;
+    border: 2px dashed #ff7f0e !important;
     border-radius: 6px !important;
-    padding: 5px !important;
     min-height: 60px !important;
+    padding: 5px !important;
 }
-/* 不要な200MB制限の文字のみ非表示 */
 div[data-testid="stFileUploader"] small {
     display: none !important;
 }
-/* 内部の文字色を白に */
-div[data-testid="stFileUploader"] section * {
-    color: white !important;
-}
-/* 内部の「Browse files」ボタンを濃いオレンジ色にして見やすく */
 div[data-testid="stFileUploader"] section button {
-    background-color: #d6680b !important;
+    background-color: #ff7f0e !important;
     color: white !important;
     border: none !important;
     font-weight: bold !important;
+    border-radius: 4px !important;
+}
+div[data-testid="stFileUploader"] section button:hover {
+    background-color: #d6680b !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -144,6 +142,19 @@ st.markdown("""
 
 st.markdown("---")
 
+# --- マニュアルダウンロード ---
+try:
+    with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
+        st.download_button(
+            label="📄 運用マニュアルをダウンロード",
+            data=pdf_file,
+            file_name="運用マニュアル20260803.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
+except FileNotFoundError:
+    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
+
 # --- クッキー（ブラウザ記憶）の読み込み処理 ---
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
@@ -151,7 +162,6 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
-# 初回アクセス時のみクッキーから復元
 if not st.session_state.get('cookie_loaded', False):
     saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
     if saved_b64 is not None:
@@ -195,37 +205,51 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - Androidのバグを防ぐため rerun を使わず即時データ上書き
+# 3. インポート（オレンジ） - Androidの文字コード問題に対応した安全なマルチエンコード読み込み
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     
     if uploaded_file is not None:
         file_id = uploaded_file.file_id
-        # 同じファイルで何度も処理が走らないようにブロック
         if st.session_state.get('last_uploaded_id') != file_id:
             try:
                 bytes_data = uploaded_file.getvalue()
-                json_str = bytes_data.decode('utf-8-sig')
-                imported_data = json.loads(json_str)
                 
-                # データを更新し、エディタ用のID（カウンタ）を進めて古いキャッシュを強制破棄する
-                st.session_state['portfolio'] = pd.DataFrame(imported_data)
-                st.session_state['import_count'] += 1
-                st.session_state['last_uploaded_id'] = file_id
-                st.session_state['cookie_loaded'] = True
+                # Android等での文字コード差異に対応するため、複数のエンコードを順に試す
+                json_str = None
+                for enc in ['utf-8-sig', 'utf-8', 'cp932', 'shift_jis']:
+                    try:
+                        json_str = bytes_data.decode(enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
                 
-                # 瞬時にクッキーにも上書き保存
-                new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                compressed = zlib.compress(new_json_str.encode('utf-8'))
-                encoded = base64.b64encode(compressed).decode('utf-8')
-                cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
-                
-                st.success("✅ データを復元しました！")
-                # ★ここで st.rerun() を呼ばないことで、Androidのバグ（増殖）を完全に防ぎます
+                if json_str is None:
+                    st.error("ファイルの文字コードを正常に読み込めませんでした。")
+                else:
+                    imported_data = json.loads(json_str)
+                    
+                    if isinstance(imported_data, list):
+                        st.session_state['portfolio'] = pd.DataFrame(imported_data)
+                        st.session_state['import_count'] += 1
+                        st.session_state['last_uploaded_id'] = file_id
+                        st.session_state['cookie_loaded'] = True
+                        
+                        # クッキーへ即時保存
+                        new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                        compressed = zlib.compress(new_json_str.encode('utf-8'))
+                        encoded = base64.b64encode(compressed).decode('utf-8')
+                        cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+                        
+                        st.success("✅ データを復元しました！")
+                        time.sleep(0.3)
+                        st.rerun()
+                    else:
+                        st.error("JSONファイルのデータ構造が正しくありません。")
             except Exception as e:
                 st.error(f"インポートに失敗しました。詳細: {e}")
 
-# データエディタ（上からの新しいデータを即座に反映させる）
+# データエディタ
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
 edited_df = st.data_editor(
@@ -239,7 +263,6 @@ edited_df = st.data_editor(
         "コード": st.column_config.TextColumn("コード", required=True)
     }
 )
-# 万が一編集されたらセッションステートを上書き
 st.session_state['portfolio'] = edited_df
 df = st.session_state['portfolio']
 
