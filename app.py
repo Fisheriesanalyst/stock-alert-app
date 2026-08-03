@@ -90,14 +90,11 @@ except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
 # --- クッキー（ブラウザ記憶）の準備と読み込み ---
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# キャッシュを使用せず、直接クッキーマネージャーを呼び出すように修正
+cookie_manager = stx.CookieManager(key="cookie_manager")
 
 if 'portfolio' not in st.session_state:
-    # 初回アクセス時にブラウザから記憶を読み出すためのわずかな待機（1回だけ実行されます）
+    # 初回アクセス時にブラウザから記憶を読み出すためのわずかな待機
     if not st.session_state.get('cookie_synced', False):
         st.session_state['cookie_synced'] = True
         time.sleep(0.3)
