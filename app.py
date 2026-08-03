@@ -31,23 +31,68 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（右上のツールバー非表示 ＆ Primaryボタンのデザイン設定）
+# カスタムCSS（ツールバー非表示 ＆ 3つのボタンのサイズ・形状統一と色分け）
 st.markdown("""
 <style>
-/* 画面右上のツールバー（Share、GitHub、メニュー等）を完全に非表示にする */
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-button[kind="primary"] {
+/* 3つのボタン（記憶、エクスポート、ファイルアップロード）の形状・サイズを完全に統一 */
+div.stButton > button, 
+div.stDownloadButton > button,
+div[data-testid="stFileUploader"] section {
+    width: 100% !important;
+    height: 48px !important;
+    border-radius: 4px !important;
+    font-weight: bold !important;
+    border: none !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 1. 左ボタン：ブラウザに記憶させる（青色） */
+div.stButton > button {
     background-color: #1f77b4 !important;
     color: white !important;
-    border: none !important;
-    font-weight: bold !important;
 }
-button[kind="primary"]:hover {
+div.stButton > button:hover {
     background-color: #155a8a !important;
     color: white !important;
+}
+
+/* 2. 中央ボタン：エクスポート（緑色） */
+div.stDownloadButton > button {
+    background-color: #2ca02c !important;
+    color: white !important;
+}
+div.stDownloadButton > button:hover {
+    background-color: #217c21 !important;
+    color: white !important;
+}
+
+/* 3. 右ボタン：ファイルアップロード（オレンジ色） */
+div[data-testid="stFileUploader"] section {
+    background-color: #ff7f0e !important;
+    color: white !important;
+    padding: 0px !important;
+    min-height: 48px !important;
+}
+div[data-testid="stFileUploader"] section:hover {
+    background-color: #d6680b !important;
+}
+
+/* アップロードボックス内の文字やアイコンを白抜き・中央配置に強制調整 */
+div[data-testid="stFileUploader"] section *, 
+div[data-testid="stFileUploader"] label {
+    color: white !important;
+    font-weight: bold !important;
+}
+/* 不要なファイルサイズ制限のテキスト等を非表示にして高さをスッキリさせる */
+div[data-testid="stFileUploader"] small, 
+div[data-testid="stFileUploader"] div.uploadedFile {
+    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -137,9 +182,9 @@ export_json = df.to_json(orient='records', force_ascii=False)
 
 col1, col2, col3 = st.columns(3)
 
-# 記憶ボタン
+# 1. 記憶ボタン（青）
 with col1:
-    if st.button("🌐 変更をこのブラウザに記憶させる", type="primary", use_container_width=True):
+    if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
             compressed = zlib.compress(export_json.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
@@ -150,16 +195,17 @@ with col1:
         except Exception:
             st.error("記憶に失敗しました。")
 
-# エクスポート・インポート機能
+# 2. エクスポートボタン（緑）
 with col2:
     st.download_button(
-        label="💾 エクスポート(バックアップ)",
+        label="💾 エクスポート",
         data=export_json,
         file_name="portfolio_data.json",
         mime="application/json",
         use_container_width=True
     )
 
+# 3. インポート（オレンジ）
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", type="json", label_visibility="collapsed")
     if uploaded_file is not None:
