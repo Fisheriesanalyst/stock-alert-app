@@ -6,14 +6,16 @@ import matplotlib.dates as mdates
 import io
 import time
 import json
+import base64
+import zlib
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
-import streamlit.components.v1 as components
 import japanize_matplotlib
+import extra_streamlit_components as stx
 
 # --- デフォルトの銘柄データ ---
 default_data = [
@@ -33,7 +35,7 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（Primaryボタンを青地・白抜きに変更）
+# カスタムCSS
 st.markdown("""
 <style>
 button[kind="primary"] {
@@ -49,10 +51,10 @@ button[kind="primary"]:hover {
 </style>
 """, unsafe_allow_html=True)
 
-# タイトルをセンタリング表示
+# タイトル
 st.markdown("<h3 style='text-align: center;'>📊 株価・投資信託 チェックボード</h3>", unsafe_allow_html=True)
 
-# --- 画像と説明文の表示 ---
+# --- 画像と説明文 ---
 try:
     st.image("25rule_minimized.jpg", use_container_width=True)
 except Exception:
@@ -64,7 +66,6 @@ st.info("""
 本アプリでは、登録した保有銘柄の「過去1年間の最高値」を基準に現在の下落率を自動計算し、（15%未満＝基準内、15～25%＝-15%、25％以上＝-25%以上）の3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
-# 色分けの説明文
 st.markdown("""
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
     <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
@@ -75,7 +76,7 @@ st.markdown("""
 
 st.markdown("---")
 
-# --- 運用マニュアルのダウンロードリンク ---
+# --- マニュアルダウンロード ---
 try:
     with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
         st.download_button(
@@ -88,39 +89,37 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-# --- ブラウザのローカルストレージを利用したデータ管理 ---
-# セッションの初期化（初回はデフォルトデータ）
+# --- クッキー（ブラウザ記憶）の準備と読み込み ---
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
+
 if 'portfolio' not in st.session_state:
-    st.session_state['portfolio'] = pd.DataFrame(default_data)
+    # 初回アクセス時にブラウザから記憶を読み出すためのわずかな待機（1回だけ実行されます）
+    if not st.session_state.get('cookie_synced', False):
+        st.session_state['cookie_synced'] = True
+        time.sleep(0.3)
+        st.rerun()
 
-# ブラウザのlocalStorageからデータを復元・保存するためのJavaScriptコンポーネント
-storage_component = components.html(
-    """
-    <script>
-    const STORAGE_KEY = "stock_app_portfolio_v1";
-    
-    // Python側からデータを受け取るための仕組み
-    window.addEventListener("message", (event) => {
-        if (event.data.type === "SAVE_DATA") {
-            localStorage.setItem(STORAGE_KEY, event.data.payload);
-        }
-    });
+    saved_b64 = cookie_manager.get(cookie="stock_portfolio_v3")
+    if saved_b64:
+        try:
+            # 圧縮されたデータを解凍して復元
+            decoded = base64.b64decode(saved_b64)
+            decompressed = zlib.decompress(decoded).decode('utf-8')
+            st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
+        except Exception:
+            st.session_state['portfolio'] = pd.DataFrame(default_data)
+    else:
+        st.session_state['portfolio'] = pd.DataFrame(default_data)
 
-    // ページ読み込み時にlocalStorageからデータを取得してStreamlitに送る
-    const savedData = localStorage.getItem(STORAGE_KEY);
-    if (savedData) {
-        window.parent.postMessage({ type: "LOAD_DATA", payload: savedData }, "*");
-    }
-    </script>
-    """,
-    height=0,
-)
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、お使いのブラウザに自動で記憶されます。")
+st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「変更をこのブラウザに記憶させる」**ボタンを押すことで次回以降も保持されます。")
 
-# 表の編集
 edited_df = st.data_editor(
     st.session_state['portfolio'],
     num_rows="dynamic",
@@ -135,23 +134,21 @@ st.session_state['portfolio'] = edited_df
 df = st.session_state['portfolio']
 export_json = df.to_json(orient='records', force_ascii=False)
 
-# 変更をブラウザのストレージに保存するためのトリガーボタン
 col1, col2, col3 = st.columns(3)
 
+# 記憶ボタン
 with col1:
-    if st.button("🌐 ブラウザに記憶させる", type="primary", use_container_width=True):
-        # JavaScriptへデータを送信してブラウザ保存させる
-        components.html(
-            f"""
-            <script>
-            const STORAGE_KEY = "stock_app_portfolio_v1";
-            localStorage.setItem(STORAGE_KEY, {json.dumps(export_json)});
-            </script>
-            """,
-            height=0,
-        )
-        st.success("このブラウザに銘柄リストを記憶させました！")
+    if st.button("🌐 変更をこのブラウザに記憶させる", type="primary", use_container_width=True):
+        try:
+            # データを圧縮してブラウザのクッキーに10年間保存
+            compressed = zlib.compress(export_json.encode('utf-8'))
+            encoded = base64.b64encode(compressed).decode('utf-8')
+            cookie_manager.set("stock_portfolio_v3", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            st.success("✅ このブラウザに銘柄リストを記憶させました！")
+        except Exception:
+            st.error("記憶に失敗しました。")
 
+# エクスポート・インポート機能（万が一のバックアップ用として残しています）
 with col2:
     st.download_button(
         label="💾 エクスポート(バックアップ)",
@@ -167,11 +164,17 @@ with col3:
         try:
             imported_data = json.load(uploaded_file)
             st.session_state['portfolio'] = pd.DataFrame(imported_data)
-            st.success("データを復元しました！「ブラウザに記憶させる」を押して保存してください。")
+            
+            # インポート時にも自動でブラウザに記憶させる
+            new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+            compressed = zlib.compress(new_json_str.encode('utf-8'))
+            encoded = base64.b64encode(compressed).decode('utf-8')
+            cookie_manager.set("stock_portfolio_v3", encoded, expires_at=datetime.now() + timedelta(days=3650))
+            
+            st.success("データを復元し、記憶しました！一度画面をリフレッシュしてください。")
         except Exception:
             st.error("インポートに失敗しました。")
 
-# 分析用の辞書作成
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
 
