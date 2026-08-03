@@ -31,7 +31,7 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（ツールバー非表示 ＆ スマホでカラムを縦並びにしてアップローダーを押しやすくする）
+# カスタムCSS（ツールバー非表示 ＆ スマホ対応・3ボタン高さ60px統一）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
@@ -79,7 +79,7 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一 ＆ スマホでも押しやすいデザイン） */
+/* 3. 右：ファイルアップローダー（オレンジ色・高さ60px統一） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
@@ -171,6 +171,8 @@ if not st.session_state.get('cookie_loaded', False):
             decoded = base64.b64decode(saved_b64)
             decompressed = zlib.decompress(decoded).decode('utf-8')
             st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
+            if "portfolio_editor" in st.session_state:
+                del st.session_state["portfolio_editor"]
             st.session_state['cookie_loaded'] = True
             st.rerun()
         except Exception:
@@ -181,26 +183,13 @@ if not st.session_state.get('cookie_loaded', False):
 st.markdown("#### 1. 銘柄の登録・管理")
 st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「ブラウザに記憶させる」**ボタンを押すことで次回以降も保持されます。")
 
-edited_df = st.data_editor(
-    st.session_state['portfolio'],
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config={
-        "区分": st.column_config.SelectboxColumn("区分", options=["個別株", "投資信託"], required=True),
-        "銘柄名": st.column_config.TextColumn("銘柄名", required=True),
-        "コード": st.column_config.TextColumn("コード", required=True)
-    }
-)
-st.session_state['portfolio'] = edited_df
-df = st.session_state['portfolio']
-export_json = df.to_json(orient='records', force_ascii=False)
-
 col1, col2, col3 = st.columns(3)
 
 # 1. 記憶ボタン（青）
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
+            export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
             compressed = zlib.compress(export_json.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
             cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
@@ -212,6 +201,7 @@ with col1:
 
 # 2. エクスポートボタン（緑）
 with col2:
+    export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
     st.download_button(
         label="💾 銘柄リストをエクスポート",
         data=export_json,
@@ -220,7 +210,7 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - スマホでも確実に読み込めるようBOM対応＆例外詳細表示
+# 3. インポート（オレンジ） - ファイル選択時のエディタキャッシュクリア処理を追加
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     if uploaded_file is not None:
@@ -229,7 +219,10 @@ with col3:
             json_str = bytes_data.decode('utf-8-sig')
             imported_data = json.loads(json_str)
             
+            # データを更新し、エディタのキャッシュを破棄して強制反映させる
             st.session_state['portfolio'] = pd.DataFrame(imported_data)
+            if "portfolio_editor" in st.session_state:
+                del st.session_state["portfolio_editor"]
             st.session_state['cookie_loaded'] = True
             
             new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
@@ -242,6 +235,21 @@ with col3:
             st.rerun()
         except Exception as e:
             st.error(f"インポートに失敗しました（エラー: {e}）")
+
+# データエディタ（keyを指定してキャッシュの競合を防ぐ）
+edited_df = st.data_editor(
+    st.session_state['portfolio'],
+    key="portfolio_editor",
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "区分": st.column_config.SelectboxColumn("区分", options=["個別株", "投資信託"], required=True),
+        "銘柄名": st.column_config.TextColumn("銘柄名", required=True),
+        "コード": st.column_config.TextColumn("コード", required=True)
+    }
+)
+st.session_state['portfolio'] = edited_df
+df = st.session_state['portfolio']
 
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
