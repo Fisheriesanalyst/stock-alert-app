@@ -38,21 +38,28 @@ if 'import_count' not in st.session_state:
 # カスタムCSS（不要なバッジ非表示 ＆ スマホ・ボタンデザイン調整）
 st.markdown("""
 <style>
-/* 右上のヘッダーメニューを非表示 */
+/* 1. 右上のヘッダーメニューを非表示 */
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* ★追加：右下のStreamlitアイコン（バッジ）やフッターを完全に非表示にする */
+/* 2. ★超強力版：右下のStreamlitアイコン（緑と赤のManage appバッジ）を完全に消滅させる */
 .viewerBadge_container, 
 .viewerBadge_link, 
 #viewerBadge,
-footer,
-[data-testid="stAppDeployButton"] {
+[data-testid="stAppDeployButton"],
+[data-testid="stToolbar"],
+[data-testid="ManageAppBadge"],
+a[href*="streamlit.io/cloud"],
+a[href*="share.streamlit.io"],
+footer {
     display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
-/* スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
+/* 3. スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
