@@ -31,18 +31,18 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# --- セッションステートの初期化（インポート確実反映のためのカウンタ） ---
+# --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# カスタムCSS（ツールバー非表示 ＆ 安全で確実なUIデザイン）
+# カスタムCSS（ツールバー非表示 ＆ 安全なアップローダーデザイン）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* スマホ画面（幅768px以下）では横並びカラムを縦並びにしてタップしやすくする */
+/* スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
@@ -52,7 +52,7 @@ st.markdown("""
     }
 }
 
-/* 左・中央のボタンの高さを60pxに統一 */
+/* 左・中央ボタンの高さを60pxに統一 */
 div.stButton > button, 
 div.stDownloadButton > button {
     width: 100% !important;
@@ -83,31 +83,34 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右：ファイルアップローダー（Androidのアップロードブロックを防ぐ安全な構造） */
+/* 3. 右：ファイルアップローダー（Androidのバグを回避する標準的な安全構造） */
 div[data-testid="stFileUploader"] {
     width: 100% !important;
 }
-div[data-testid="stFileUploader"] section {
-    background-color: #fff3e0 !important;
-    border: 2px dashed #ff7f0e !important;
-    border-radius: 6px !important;
-    min-height: 60px !important;
-    padding: 10px !important;
+div[data-testid="stFileUploader"] > label {
+    display: none !important;
 }
-/* 200MB制限などの文字のみを非表示にする */
+div[data-testid="stFileUploader"] section {
+    background-color: #ff7f0e !important;
+    border: none !important;
+    border-radius: 6px !important;
+    padding: 5px !important;
+    min-height: 60px !important;
+}
+/* 不要な200MB制限の文字のみ非表示 */
 div[data-testid="stFileUploader"] small {
     display: none !important;
 }
-/* アップローダー内のボタン（Browse files）をオレンジ色に統一 */
-div[data-testid="stFileUploader"] button {
-    background-color: #ff7f0e !important;
+/* 内部の文字色を白に */
+div[data-testid="stFileUploader"] section * {
     color: white !important;
-    font-weight: bold !important;
-    border: none !important;
-    border-radius: 4px !important;
 }
-div[data-testid="stFileUploader"] button:hover {
+/* 内部の「Browse files」ボタンを濃いオレンジ色にして見やすく */
+div[data-testid="stFileUploader"] section button {
     background-color: #d6680b !important;
+    color: white !important;
+    border: none !important;
+    font-weight: bold !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -141,26 +144,14 @@ st.markdown("""
 
 st.markdown("---")
 
-# --- マニュアルダウンロード ---
-try:
-    with open("運用マニュアル20260803.pdf", "rb") as pdf_file:
-        st.download_button(
-            label="📄 運用マニュアルをダウンロード",
-            data=pdf_file,
-            file_name="運用マニュアル20260803.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
-except FileNotFoundError:
-    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
-
-# --- クッキー（ブラウザ記憶）の確実な読み込み処理 ---
+# --- クッキー（ブラウザ記憶）の読み込み処理 ---
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
+# 初回アクセス時のみクッキーから復元
 if not st.session_state.get('cookie_loaded', False):
     saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
     if saved_b64 is not None:
@@ -169,7 +160,6 @@ if not st.session_state.get('cookie_loaded', False):
             decompressed = zlib.decompress(decoded).decode('utf-8')
             st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
             st.session_state['cookie_loaded'] = True
-            st.rerun()
         except Exception:
             st.session_state['cookie_loaded'] = True
 
@@ -205,13 +195,13 @@ with col2:
         use_container_width=True
     )
 
-# 3. インポート（オレンジ） - type制限を完全撤廃し、Androidでのグレーアウトを確実に回避
+# 3. インポート（オレンジ） - Androidのバグを防ぐため rerun を使わず即時データ上書き
 with col3:
     uploaded_file = st.file_uploader("📂 インポート", label_visibility="collapsed")
     
     if uploaded_file is not None:
         file_id = uploaded_file.file_id
-        # 同じファイルで何度もリロードが走らないようにIDでブロック
+        # 同じファイルで何度も処理が走らないようにブロック
         if st.session_state.get('last_uploaded_id') != file_id:
             try:
                 bytes_data = uploaded_file.getvalue()
@@ -231,12 +221,11 @@ with col3:
                 cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
                 
                 st.success("✅ データを復元しました！")
-                time.sleep(0.5)
-                st.rerun()
+                # ★ここで st.rerun() を呼ばないことで、Androidのバグ（増殖）を完全に防ぎます
             except Exception as e:
-                st.error(f"インポートに失敗しました。JSONファイルを選択してください。詳細: {e}")
+                st.error(f"インポートに失敗しました。詳細: {e}")
 
-# データエディタ（keyに動的カウンタを持たせることで、Androidの頑固なキャッシュを強制クリアして更新させる）
+# データエディタ（上からの新しいデータを即座に反映させる）
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
 edited_df = st.data_editor(
@@ -250,6 +239,7 @@ edited_df = st.data_editor(
         "コード": st.column_config.TextColumn("コード", required=True)
     }
 )
+# 万が一編集されたらセッションステートを上書き
 st.session_state['portfolio'] = edited_df
 df = st.session_state['portfolio']
 
