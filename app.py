@@ -31,25 +31,22 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", layout="centered")
 
-# カスタムCSS（ツールバー非表示 ＆ 3つのボタンのサイズ・形状統一と色分け）
+# カスタムCSS（ツールバー非表示 ＆ 3つのボタン・アップローダーのサイズ統一）
 st.markdown("""
 <style>
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* 3つのボタン（記憶、エクスポート、ファイルアップロード）の形状・サイズを完全に統一 */
+/* ボタンの高さを大きめ（60px）に統一 */
 div.stButton > button, 
-div.stDownloadButton > button,
-div[data-testid="stFileUploader"] section {
+div.stDownloadButton > button {
     width: 100% !important;
-    height: 48px !important;
-    border-radius: 4px !important;
+    height: 60px !important;
+    border-radius: 6px !important;
     font-weight: bold !important;
+    font-size: 15px !important;
     border: none !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
 }
 
 /* 1. 左ボタン：ブラウザに記憶させる（青色） */
@@ -62,7 +59,7 @@ div.stButton > button:hover {
     color: white !important;
 }
 
-/* 2. 中央ボタン：エクスポート（緑色） */
+/* 2. 中央ボタン：銘柄リストをエクスポート（緑色） */
 div.stDownloadButton > button {
     background-color: #2ca02c !important;
     color: white !important;
@@ -72,27 +69,23 @@ div.stDownloadButton > button:hover {
     color: white !important;
 }
 
-/* 3. 右ボタン：ファイルアップロード（オレンジ色） */
+/* 3. 右：ファイルアップローダー（オレンジ基調のきれいな枠線デザインに統一） */
+div[data-testid="stFileUploader"] {
+    width: 100% !important;
+}
 div[data-testid="stFileUploader"] section {
-    background-color: #ff7f0e !important;
-    color: white !important;
-    padding: 0px !important;
-    min-height: 48px !important;
+    background-color: #fff3e0 !important;
+    border: 2px dashed #ff7f0e !important;
+    border-radius: 6px !important;
+    min-height: 60px !important;
+    padding: 4px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
 }
-div[data-testid="stFileUploader"] section:hover {
-    background-color: #d6680b !important;
-}
-
-/* アップロードボックス内の文字やアイコンを白抜き・中央配置に強制調整 */
-div[data-testid="stFileUploader"] section *, 
-div[data-testid="stFileUploader"] label {
-    color: white !important;
+div[data-testid="stFileUploader"] section * {
+    color: #d6680b !important;
     font-weight: bold !important;
-}
-/* 不要なファイルサイズ制限のテキスト等を非表示にして高さをスッキリさせる */
-div[data-testid="stFileUploader"] small, 
-div[data-testid="stFileUploader"] div.uploadedFile {
-    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -164,7 +157,7 @@ if saved_b64 is not None and not st.session_state.get('cookie_loaded', False):
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「変更をこのブラウザに記憶させる」**ボタンを押すことで次回以降も保持されます。")
+st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「ブラウザに記憶させる」**ボタンを押すことで次回以降も保持されます。")
 
 edited_df = st.data_editor(
     st.session_state['portfolio'],
@@ -195,10 +188,10 @@ with col1:
         except Exception:
             st.error("記憶に失敗しました。")
 
-# 2. エクスポートボタン（緑）
+# 2. エクスポートボタン（緑） - ラベルを「銘柄リストをエクスポート」に変更
 with col2:
     st.download_button(
-        label="💾 エクスポート",
+        label="💾 銘柄リストをエクスポート",
         data=export_json,
         file_name="portfolio_data.json",
         mime="application/json",
