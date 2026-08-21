@@ -382,10 +382,10 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     # ========================================
     # 投資信託チェック (修正版: パフォーマンス比較・エラー対応)
     # ========================================
-    st.markdown("##### 投資信託")
+    st.markdown("#### 投資信託")
     
-    # グラフ上部への注記文追加
-    st.markdown("注）投資信託については、複数銘柄のパフォーマンス比較を目的としておりグラフの表示期間は過去１年間です。またグラフ色は銘柄識別を優先したので直近最高値からの下落幅を示していません。")
+    # グラフ上部への注記文追加（赤色フォント）
+    st.markdown("<p style='color: red; font-size: 0.95em; font-weight: bold;'>注）投資信託については、複数銘柄のパフォーマンス比較を目的としておりグラフの表示期間は過去１年間です。またグラフ色は銘柄識別を優先したので直近最高値からの下落幅を示していません。</p>", unsafe_allow_html=True)
     
     if len(funds) > 0:
         options = Options()
@@ -484,15 +484,37 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             # 銘柄識別用のカラーパレット（tab10）を取得
             colors = plt.cm.tab10.colors
+            max_date = None
             
             for i, (name, df_fund) in enumerate(fund_data_dict.items()):
                 # 銘柄ごとに個別の色を割り当て
                 color = colors[i % len(colors)]
                 ax.plot(df_fund['Date'], df_fund['Performance'], label=name, color=color, linewidth=2)
+                
+                # エンド（右端）に直近価格を表示
+                last_date = df_fund['Date'].iloc[-1]
+                last_perf = df_fund['Performance'].iloc[-1]
+                last_price = df_fund['Price'].iloc[-1]
+                
+                # 一番右のX座標を取得しておく（テキスト見切れ防止のため）
+                if max_date is None or last_date > max_date:
+                    max_date = last_date
+                
+                ax.annotate(f' {int(last_price):,}円', 
+                            xy=(last_date, last_perf), 
+                            xytext=(5, 0), 
+                            textcoords='offset points', 
+                            va='center', ha='left', 
+                            color=color, fontweight='bold', fontsize=9)
             
             # グラフの書式設定
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m'))
             fig.autofmt_xdate()
+            
+            # 右端のテキストが見切れないようにX軸の表示範囲を45日分拡張する
+            if max_date is not None:
+                ax.set_xlim(left=ax.get_xlim()[0], right=mdates.date2num(max_date + timedelta(days=45)))
+                
             ax.set_title("投資信託パフォーマンス比較 (過去1年間)", fontsize=14, fontweight='bold', pad=15)
             # Y軸ラベルに指数化している旨を記載
             ax.set_ylabel("基準価額推移 (1年前の数値を100として計算)", fontsize=11)
