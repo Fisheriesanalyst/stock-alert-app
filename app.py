@@ -1,7 +1,6 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.subplots as plt_subplots
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
@@ -395,7 +394,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         
-        # ★追加: 画面サイズをPC版（フルHD）に強制し、ボット判定を回避するユーザーエージェントを設定
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         
@@ -424,7 +422,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             url = f"https://finance.yahoo.co.jp/quote/{str(code).strip()}/history"
             driver.get(url)
-            # ★変更: 初回のページ読み込み完了を確実に待機するため、3秒から5秒に延長
             time.sleep(5)
             
             all_html = []
