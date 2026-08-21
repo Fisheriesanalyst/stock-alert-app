@@ -171,7 +171,26 @@ if not st.session_state.get('cookie_loaded', False):
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「ブラウザに記憶させる」**ボタンを押すことで次回以降も保持されます。")
+st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。表を変更した後は、忘れずに表の下にある**「🌐 ブラウザに記憶させる」**ボタンを押して保存してください。")
+
+# ⚠️修正ポイント：データエディタ（表）をボタンより「上」に配置し、最新の編集状態を確実に取得する
+editor_key = f"portfolio_editor_{st.session_state['import_count']}"
+
+edited_df = st.data_editor(
+    st.session_state['portfolio'],
+    key=editor_key,
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "区分": st.column_config.SelectboxColumn("区分", options=["個別株", "投資信託"], required=True),
+        "銘柄名": st.column_config.TextColumn("銘柄名", required=True),
+        "コード": st.column_config.TextColumn("コード", required=True)
+    }
+)
+st.session_state['portfolio'] = edited_df
+df = st.session_state['portfolio']
+
+st.markdown("<br>", unsafe_allow_html=True) # ボタンとの間に少し余白を作成
 
 col1, col2, col3 = st.columns(3)
 
@@ -179,19 +198,19 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+            export_json = df.to_json(orient='records', force_ascii=False)
             compressed = zlib.compress(export_json.encode('utf-8'))
             encoded = base64.b64encode(compressed).decode('utf-8')
             cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
             
             st.session_state['cookie_loaded'] = True
-            st.success("✅ このブラウザに銘柄リストを記憶させました！")
-        except Exception:
-            st.error("記憶に失敗しました。")
+            st.success("✅ このブラウザに最新の銘柄リストを記憶させました！")
+        except Exception as e:
+            st.error(f"記憶に失敗しました。詳細: {e}")
 
 # 2. エクスポートボタン（緑）
 with col2:
-    export_json = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+    export_json = df.to_json(orient='records', force_ascii=False)
     st.download_button(
         label="💾 銘柄リストをエクスポート",
         data=export_json,
@@ -230,7 +249,7 @@ with col3:
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
-                    st.rerun()
+                    st.rerun() # リロードして上のエディタに即座に反映させる
             except Exception as e:
                 st.error(f"ファイルインポートに失敗: {e}")
 
@@ -262,23 +281,6 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                 st.error(f"テキストの読み込みに失敗しました。コピー漏れがないか確認してください。（エラー詳細: {e}）")
         else:
             st.warning("枠内にJSONテキストが貼り付けられていません。")
-
-# データエディタ
-editor_key = f"portfolio_editor_{st.session_state['import_count']}"
-
-edited_df = st.data_editor(
-    st.session_state['portfolio'],
-    key=editor_key,
-    num_rows="dynamic",
-    use_container_width=True,
-    column_config={
-        "区分": st.column_config.SelectboxColumn("区分", options=["個別株", "投資信託"], required=True),
-        "銘柄名": st.column_config.TextColumn("銘柄名", required=True),
-        "コード": st.column_config.TextColumn("コード", required=True)
-    }
-)
-st.session_state['portfolio'] = edited_df
-df = st.session_state['portfolio']
 
 tickers = dict(zip(df[df['区分'] == '個別株']['銘柄名'], df[df['区分'] == '個別株']['コード']))
 funds = dict(zip(df[df['区分'] == '投資信託']['銘柄名'], df[df['区分'] == '投資信託']['コード']))
@@ -380,11 +382,10 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     st.markdown("---")
 
     # ========================================
-    # 投資信託チェック (修正版: パフォーマンス比較・エラー対応)
+    # 投資信託チェック
     # ========================================
     st.markdown("#### 投資信託")
     
-    # グラフ上部への注記文追加（赤色フォント）
     st.markdown("<p style='color: red; font-size: 0.95em; font-weight: bold;'>注）投資信託については、複数銘柄のパフォーマンス比較を目的としておりグラフの表示期間は過去１年間です。またグラフ色は銘柄識別を優先したので直近最高値からの下落幅を示していません。</p>", unsafe_allow_html=True)
     
     if len(funds) > 0:
@@ -394,7 +395,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         
-        # Streamlit Cloud環境とローカル環境でのChrome Driver分岐処理によるエラー回避
         try:
             if os.path.exists("/usr/bin/chromedriver"):
                 service = Service("/usr/bin/chromedriver")
@@ -412,7 +412,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         
         limit_date_1y = datetime.now() - timedelta(days=365)
         
-        # 各銘柄の過去1年分データを格納する辞書
         fund_data_dict = {}
 
         for i, (name, code) in enumerate(funds.items()):
@@ -424,7 +423,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             time.sleep(3)
             
             all_html = []
-            # 過去1年分（約250営業日）をカバーするため、取得ページ数を少し多めに設定
             for page in range(15):
                 all_html.append(driver.page_source)
                 try:
@@ -460,43 +458,35 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             full_df = full_df.dropna().drop_duplicates(subset=['Date']).sort_values('Date')
             
-            # 過去1年間分のデータにフィルタリング
             calc_df = full_df[full_df['Date'] >= limit_date_1y].copy()
 
             if calc_df.empty:
                 st.warning(f"⚠️ {name} の有効な日付データがありません。")
                 continue
 
-            # 公平なパフォーマンス比較のため、1年前の初日基準価額を100として指数化計算
             base_price = calc_df['Price'].iloc[0]
             calc_df['Performance'] = (calc_df['Price'] / base_price) * 100
             
-            # 辞書に保存
             fund_data_dict[name] = calc_df
 
         driver.quit()
         status_text_fund.text("投資信託の取得完了！")
         progress_bar_fund.empty()
         
-        # --- 取得した投資信託データを一つのグラフにまとめて表示 ---
         if fund_data_dict:
             fig, ax = plt.subplots(figsize=(10, 6))
             
-            # 銘柄識別用のカラーパレット（tab10）を取得
             colors = plt.cm.tab10.colors
             max_date = None
             
             for i, (name, df_fund) in enumerate(fund_data_dict.items()):
-                # 銘柄ごとに個別の色を割り当て
                 color = colors[i % len(colors)]
                 ax.plot(df_fund['Date'], df_fund['Performance'], label=name, color=color, linewidth=2)
                 
-                # エンド（右端）に直近価格を表示
                 last_date = df_fund['Date'].iloc[-1]
                 last_perf = df_fund['Performance'].iloc[-1]
                 last_price = df_fund['Price'].iloc[-1]
                 
-                # 一番右のX座標を取得しておく（テキスト見切れ防止のため）
                 if max_date is None or last_date > max_date:
                     max_date = last_date
                 
@@ -507,20 +497,16 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
                             va='center', ha='left', 
                             color=color, fontweight='bold', fontsize=9)
             
-            # グラフの書式設定
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m'))
             fig.autofmt_xdate()
             
-            # 右端のテキストが見切れないようにX軸の表示範囲を45日分拡張する
             if max_date is not None:
                 ax.set_xlim(left=ax.get_xlim()[0], right=mdates.date2num(max_date + timedelta(days=45)))
                 
             ax.set_title("投資信託パフォーマンス比較 (過去1年間)", fontsize=14, fontweight='bold', pad=15)
-            # Y軸ラベルに指数化している旨を記載
             ax.set_ylabel("基準価額推移 (1年前の数値を100として計算)", fontsize=11)
             ax.grid(True, linestyle='--', alpha=0.7)
             
-            # 凡例をグラフの最適な位置に表示
             ax.legend(loc='best', fontsize=9, framealpha=0.9)
             
             plt.tight_layout()
