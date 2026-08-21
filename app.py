@@ -8,6 +8,7 @@ import time
 import json
 import base64
 import zlib
+import os
 from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -29,21 +30,21 @@ default_data = [
 ]
 
 # --- 画面設定 ---
-st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📊", layout="centered")
+st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# カスタムCSS（不要なバッジ非表示 ＆ スマホ・ボタンデザイン調整）
+# カスタムCSS
 st.markdown("""
 <style>
-/* 1. 右上のヘッダーメニューを非表示 */
+/* 右上のヘッダーメニューを非表示 */
 [data-testid="stHeader"] {
     display: none !important;
 }
 
-/* 2. ★超強力版：右下のStreamlitアイコン（緑と赤のManage appバッジ）を完全に消滅させる */
+/* 右下のStreamlitアイコン（バッジ）やフッターを非表示 */
 .viewerBadge_container, 
 .viewerBadge_link, 
 #viewerBadge,
@@ -59,7 +60,6 @@ footer {
     pointer-events: none !important;
 }
 
-/* 3. スマホ画面（幅768px以下）では横並びを縦並びにして操作性を向上させる */
 @media (max-width: 768px) {
     [data-testid="column"] {
         width: 100% !important;
@@ -126,7 +126,7 @@ st.info("""
 # 色分けの説明文を追加
 st.markdown("""
 <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 5px; padding: 0 10px;">
-    アラートはグラフの色でも表示します
+    個別株式のアラートはグラフの色でも表示します
 </div>
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
     <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
@@ -380,25 +380,40 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     st.markdown("---")
 
     # ========================================
-    # 投資信託チェック
+    # 投資信託チェック (修正版: パフォーマンス比較・エラー対応)
     # ========================================
     st.markdown("##### 投資信託")
     
+    # グラフ上部への注記文追加
+    st.markdown("注）投資信託については、複数銘柄のパフォーマンス比較を目的としておりグラフの表示期間は過去１年間です。またグラフ色は銘柄識別を優先したので直近最高値からの下落幅を示していません。")
+    
     if len(funds) > 0:
         options = Options()
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
+        
+        # Streamlit Cloud環境とローカル環境でのChrome Driver分岐処理によるエラー回避
+        try:
+            if os.path.exists("/usr/bin/chromedriver"):
+                service = Service("/usr/bin/chromedriver")
+                options.binary_location = "/usr/bin/chromium"
+                driver = webdriver.Chrome(service=service, options=options)
+            else:
+                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        except Exception as e:
+            st.error(f"ブラウザドライバの起動に失敗しました。システム環境を確認してください。詳細: {e}")
+            st.stop()
         
         status_text_fund = st.empty()
         progress_bar_fund = st.progress(0)
         total_funds = len(funds)
         
         limit_date_1y = datetime.now() - timedelta(days=365)
-        limit_date_6m = datetime.now() - timedelta(days=180)
-
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        
+        # 各銘柄の過去1年分データを格納する辞書
+        fund_data_dict = {}
 
         for i, (name, code) in enumerate(funds.items()):
             status_text_fund.text(f"投資信託取得中... {name} ({i+1}/{total_funds})")
@@ -406,15 +421,16 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             url = f"https://finance.yahoo.co.jp/quote/{str(code).strip()}/history"
             driver.get(url)
-            time.sleep(4)
+            time.sleep(3)
             
             all_html = []
-            for page in range(20):
+            # 過去1年分（約250営業日）をカバーするため、取得ページ数を少し多めに設定
+            for page in range(15):
                 all_html.append(driver.page_source)
                 try:
                     next_btn = driver.find_element(By.XPATH, "//*[contains(text(), '次へ')]")
                     driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(3)
+                    time.sleep(2)
                 except:
                     break
 
@@ -443,44 +459,52 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             full_df['Price'] = pd.to_numeric(full_df['Price'].astype(str).str.replace(',', '').str.replace('円', ''), errors='coerce')
             
             full_df = full_df.dropna().drop_duplicates(subset=['Date']).sort_values('Date')
-            calc_df = full_df[full_df['Date'] >= limit_date_1y]
+            
+            # 過去1年間分のデータにフィルタリング
+            calc_df = full_df[full_df['Date'] >= limit_date_1y].copy()
 
             if calc_df.empty:
                 st.warning(f"⚠️ {name} の有効な日付データがありません。")
                 continue
 
-            high_1y = calc_df['Price'].max()
-            current_price = calc_df['Price'].iloc[-1]
-            drop_rate = (current_price - high_1y) / high_1y * 100
-
-            plot_df = calc_df[calc_df['Date'] >= limit_date_6m]
-
-            if plot_df.empty:
-                st.warning(f"⚠️ {name} の過去6ヶ月分のデータがありません。")
-                continue
-
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(plot_df['Date'], plot_df['Price'], marker='o', markersize=3, linestyle='-', color='#1f77b4')
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
-            fig.autofmt_xdate()
+            # 公平なパフォーマンス比較のため、1年前の初日基準価額を100として指数化計算
+            base_price = calc_df['Price'].iloc[0]
+            calc_df['Performance'] = (calc_df['Price'] / base_price) * 100
             
-            ax.set_title(f"{name} - 基準価額の推移 (過去6ヶ月)", fontsize=14, fontweight='bold')
-            ax.grid(True, linestyle='--', alpha=0.7)
-            
-            last_date = plot_df['Date'].iloc[-1]
-            ax.annotate(f' {int(current_price):,}', xy=(last_date, current_price), xytext=(5, 0), textcoords='offset points', va='center', ha='left', color='#1f77b4', fontweight='bold', fontsize=11)
-
-            text_str = f"1年以内高値: {int(high_1y):,}円\n現在値: {int(current_price):,}円\n下落率: {drop_rate:.2f}%"
-            props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray')
-            ax.text(0.02, 0.95, text_str, transform=ax.transAxes, fontsize=10, verticalalignment='top', horizontalalignment='left', bbox=props)
-            ax.set_xlim(plot_df['Date'].min(), last_date + timedelta(days=15))
-            
-            with st.expander(f"{name} の推移を見る", expanded=True):
-                st.pyplot(fig)
-            plt.close()
+            # 辞書に保存
+            fund_data_dict[name] = calc_df
 
         driver.quit()
         status_text_fund.text("投資信託の取得完了！")
+        progress_bar_fund.empty()
+        
+        # --- 取得した投資信託データを一つのグラフにまとめて表示 ---
+        if fund_data_dict:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # 銘柄識別用のカラーパレット（tab10）を取得
+            colors = plt.cm.tab10.colors
+            
+            for i, (name, df_fund) in enumerate(fund_data_dict.items()):
+                # 銘柄ごとに個別の色を割り当て
+                color = colors[i % len(colors)]
+                ax.plot(df_fund['Date'], df_fund['Performance'], label=name, color=color, linewidth=2)
+            
+            # グラフの書式設定
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y/%m'))
+            fig.autofmt_xdate()
+            ax.set_title("投資信託パフォーマンス比較 (過去1年間)", fontsize=14, fontweight='bold', pad=15)
+            # Y軸ラベルに指数化している旨を記載
+            ax.set_ylabel("基準価額推移 (1年前の数値を100として計算)", fontsize=11)
+            ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # 凡例をグラフの最適な位置に表示
+            ax.legend(loc='best', fontsize=9, framealpha=0.9)
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+
     else:
         st.info("投資信託が登録されていません。")
 
