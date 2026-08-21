@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import matplotlib.subplots as plt_subplots
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import io
@@ -173,7 +174,6 @@ if not st.session_state.get('cookie_loaded', False):
 st.markdown("#### 1. 銘柄の登録・管理")
 st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。表を変更した後は、忘れずに表の下にある**「🌐 ブラウザに記憶させる」**ボタンを押して保存してください。")
 
-# ⚠️修正ポイント：データエディタ（表）をボタンより「上」に配置し、最新の編集状態を確実に取得する
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
 edited_df = st.data_editor(
@@ -190,7 +190,7 @@ edited_df = st.data_editor(
 st.session_state['portfolio'] = edited_df
 df = st.session_state['portfolio']
 
-st.markdown("<br>", unsafe_allow_html=True) # ボタンとの間に少し余白を作成
+st.markdown("<br>", unsafe_allow_html=True) 
 
 col1, col2, col3 = st.columns(3)
 
@@ -249,7 +249,7 @@ with col3:
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
-                    st.rerun() # リロードして上のエディタに即座に反映させる
+                    st.rerun() 
             except Exception as e:
                 st.error(f"ファイルインポートに失敗: {e}")
 
@@ -395,6 +395,10 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
         
+        # ★追加: 画面サイズをPC版（フルHD）に強制し、ボット判定を回避するユーザーエージェントを設定
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        
         try:
             if os.path.exists("/usr/bin/chromedriver"):
                 service = Service("/usr/bin/chromedriver")
@@ -420,7 +424,8 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
             
             url = f"https://finance.yahoo.co.jp/quote/{str(code).strip()}/history"
             driver.get(url)
-            time.sleep(3)
+            # ★変更: 初回のページ読み込み完了を確実に待機するため、3秒から5秒に延長
+            time.sleep(5)
             
             all_html = []
             for page in range(15):
