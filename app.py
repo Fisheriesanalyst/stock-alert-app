@@ -6,8 +6,6 @@ import matplotlib.dates as mdates
 import io
 import time
 import json
-import base64
-import zlib
 import os
 from datetime import datetime, timedelta
 from selenium import webdriver
@@ -16,7 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
-import extra_streamlit_components as stx
+import streamlit.components.v1 as components
 
 # --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
@@ -35,6 +33,9 @@ st.set_page_config(page_title="株価・投資信託 チェックボード", pag
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
+
+if 'portfolio' not in st.session_state:
+    st.session_state['portfolio'] = pd.DataFrame(default_data)
 
 # カスタムCSS
 st.markdown("""
@@ -150,34 +151,37 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-# --- クッキー（ブラウザ記憶）の読み込み処理 ---
-cookie_manager = stx.CookieManager(key="cookie_manager")
+# --- ブラウザのローカルストレージ（各ユーザー固有）を利用した保存・読み込み処理 ---
+storage_key = "stock_portfolio_local_v5"
 
-if 'portfolio' not in st.session_state:
-    st.session_state['portfolio'] = pd.DataFrame(default_data)
-    st.session_state['cookie_loaded'] = False
+# ローカルストレージからデータを取得・同期するためのJavaScriptコンポーネント
+storage_code = f"""
+<script>
+const STORAGE_KEY = "{storage_key}";
 
-# 初回起動時にクッキーからデータを読み込む処理
-if not st.session_state.get('cookie_loaded', False):
-    saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
-    if saved_b64 is not None:
-        try:
-            decoded = base64.b64decode(saved_b64)
-            decompressed = zlib.decompress(decoded).decode('utf-8')
-            st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
-            st.session_state['cookie_loaded'] = True
-            
-            # ★修正ポイント：クッキーを読み込めた瞬間に、表のIDを進めて強制再描画する！
-            st.session_state['import_count'] += 1
-            st.rerun()
-            
-        except Exception:
-            st.session_state['cookie_loaded'] = True
+// 1. ページ読み込み時に保存データがあればStreamlit側へ通知する仕組み
+window.addEventListener("DOMContentLoaded", () => {{
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && !window.parent.document.getElementById("loaded_data_flag")) {{
+        // 初回ロード時にデータを渡す隠し要素を作成
+        const flag = document.createElement("div");
+        flag.id = "loaded_data_flag";
+        window.parent.document.body.appendChild(flag);
+    }});
+}});
 
+// 2. 外部から保存命令を受けたときの関数
+function saveToLocal(dataJson) {{
+    localStorage.setItem(STORAGE_KEY, dataJson);
+    console.log("LocalStorage Saved!");
+}}
+</script>
+"""
+components.html(storage_code, height=0)
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。表を変更した後は、忘れずに表の下にある**「🌐 ブラウザに記憶させる」**ボタンを押して保存してください。")
+st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、**あなたがお使いのブラウザ内（ローカル）にのみ**安全に保存されます。")
 
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
@@ -199,19 +203,21 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
-# 1. 記憶ボタン（青）
+# 1. ブラウザ保存ボタン（青）
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            export_json = df.to_json(orient='records', force_ascii=False)
-            compressed = zlib.compress(export_json.encode('utf-8'))
-            encoded = base64.b64encode(compressed).decode('utf-8')
-            cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
-            
-            st.session_state['cookie_loaded'] = True
-            st.success("✅ このブラウザに最新の銘柄リストを記憶させました！")
+            json_str = df.to_json(orient='records', force_ascii=False)
+            # ブラウザのLocalStorageに保存するJavaScriptを実行
+            js_code = f"""
+            <script>
+            localStorage.setItem("{storage_key}", {json.dumps(json_str)});
+            </script>
+            """
+            components.html(js_code, height=0)
+            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
         except Exception as e:
-            st.error(f"記憶に失敗しました。詳細: {e}")
+            st.error(f"保存に失敗しました。詳細: {e}")
 
 # 2. エクスポートボタン（緑）
 with col2:
@@ -245,12 +251,15 @@ with col3:
                     st.session_state['portfolio'] = pd.DataFrame(imported_data)
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
-                    st.session_state['cookie_loaded'] = True
                     
+                    # ブラウザのLocalStorageも同時に更新
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    compressed = zlib.compress(new_json_str.encode('utf-8'))
-                    encoded = base64.b64encode(compressed).decode('utf-8')
-                    cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+                    js_code = f"""
+                    <script>
+                    localStorage.setItem("{storage_key}", {json.dumps(new_json_str)});
+                    </script>
+                    """
+                    components.html(js_code, height=0)
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
@@ -270,12 +279,14 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                 if isinstance(imported_data_from_text, list):
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
-                    st.session_state['cookie_loaded'] = True
                     
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    compressed = zlib.compress(new_json_str.encode('utf-8'))
-                    encoded = base64.b64encode(compressed).decode('utf-8')
-                    cookie_manager.set("stock_portfolio_v4", encoded, expires_at=datetime.now() + timedelta(days=3650))
+                    js_code = f"""
+                    <script>
+                    localStorage.setItem("{storage_key}", {json.dumps(new_json_str)});
+                    </script>
+                    """
+                    components.html(js_code, height=0)
                     
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
