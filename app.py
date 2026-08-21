@@ -8,11 +8,6 @@ import time
 import json
 import os
 from datetime import datetime, timedelta
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
 import streamlit.components.v1 as components
 
@@ -151,37 +146,27 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-# --- ブラウザのローカルストレージ（各ユーザー固有）を利用した保存・読み込み処理 ---
+# --- ローカルストレージ連携処理 ---
 storage_key = "stock_portfolio_local_v5"
 
-# ローカルストレージからデータを取得・同期するためのJavaScriptコンポーネント
 storage_code = f"""
 <script>
 const STORAGE_KEY = "{storage_key}";
-
-// 1. ページ読み込み時に保存データがあればStreamlit側へ通知する仕組み
 window.addEventListener("DOMContentLoaded", () => {{
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && !window.parent.document.getElementById("loaded_data_flag")) {{
-        // 初回ロード時にデータを渡す隠し要素を作成
         const flag = document.createElement("div");
         flag.id = "loaded_data_flag";
         window.parent.document.body.appendChild(flag);
-    }});
+    }}
 }});
-
-// 2. 外部から保存命令を受けたときの関数
-function saveToLocal(dataJson) {{
-    localStorage.setItem(STORAGE_KEY, dataJson);
-    console.log("LocalStorage Saved!");
-}}
 </script>
 """
 components.html(storage_code, height=0)
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、**あなたがお使いのブラウザ内（ローカル）にのみ**安全に保存されます。")
+st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、お使いのブラウザ内（ローカル）に保存されます。")
 
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
@@ -208,14 +193,13 @@ with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
             json_str = df.to_json(orient='records', force_ascii=False)
-            # ブラウザのLocalStorageに保存するJavaScriptを実行
             js_code = f"""
             <script>
             localStorage.setItem("{storage_key}", {json.dumps(json_str)});
             </script>
             """
             components.html(js_code, height=0)
-            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
+            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！")
         except Exception as e:
             st.error(f"保存に失敗しました。詳細: {e}")
 
@@ -252,7 +236,6 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # ブラウザのLocalStorageも同時に更新
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
                     js_code = f"""
                     <script>
@@ -398,97 +381,69 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
     st.markdown("---")
 
     # ========================================
-    # 投資信託チェック
+    # 投資信託チェック（yfinance 高速・安定化版）
     # ========================================
     st.markdown("#### 投資信託")
     
     st.markdown("<p style='color: red; font-size: 0.95em; font-weight: bold;'>注）投資信託については、複数銘柄のパフォーマンス比較を目的としておりグラフの表示期間は過去１年間です。またグラフ色は銘柄識別を優先したので直近最高値からの下落幅を示していません。</p>", unsafe_allow_html=True)
     
     if len(funds) > 0:
-        options = Options()
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        
-        try:
-            if os.path.exists("/usr/bin/chromedriver"):
-                service = Service("/usr/bin/chromedriver")
-                options.binary_location = "/usr/bin/chromium"
-                driver = webdriver.Chrome(service=service, options=options)
-            else:
-                driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-        except Exception as e:
-            st.error(f"ブラウザドライバの起動に失敗しました。システム環境を確認してください。詳細: {e}")
-            st.stop()
-        
         status_text_fund = st.empty()
         progress_bar_fund = st.progress(0)
         total_funds = len(funds)
         
         limit_date_1y = datetime.now() - timedelta(days=365)
-        
         fund_data_dict = {}
 
         for i, (name, code) in enumerate(funds.items()):
             status_text_fund.text(f"投資信託取得中... {name} ({i+1}/{total_funds})")
             progress_bar_fund.progress((i + 1) / total_funds)
             
-            url = f"https://finance.yahoo.co.jp/quote/{str(code).strip()}/history"
-            driver.get(url)
-            time.sleep(5)
+            clean_code = str(code).strip()
+            # 投資信託コード（数字8桁など）の場合、末尾に .T や適切な識別子がつかないことがあるため、
+            # Yahoo Finance形式のティッカー（例: "18312991.T" またはそのまま）を試す
+            ticker_candidates = [clean_code, f"{clean_code}.T"]
             
-            all_html = []
-            for page in range(15):
-                all_html.append(driver.page_source)
+            calc_df = pd.DataFrame()
+            for t_str in ticker_candidates:
                 try:
-                    next_btn = driver.find_element(By.XPATH, "//*[contains(text(), '次へ')]")
-                    driver.execute_script("arguments[0].click();", next_btn)
-                    time.sleep(2)
-                except:
-                    break
-
-            full_df = pd.DataFrame()
-            for html in all_html:
-                try:
-                    dfs = pd.read_html(io.StringIO(html))
-                    for temp_df in dfs:
-                        cols = [str(c) for c in temp_df.columns]
-                        if len(cols) >= 2 and any('日付' in c for c in cols):
-                            date_col = [c for c in cols if '日付' in c][0]
-                            price_col = [c for c in cols if c != date_col][0]
-                            
-                            df_piece = temp_df[[date_col, price_col]].copy()
-                            df_piece.columns = ['Date', 'Price']
-                            full_df = pd.concat([full_df, df_piece])
-                            break
+                    fund_obj = yf.Ticker(t_str)
+                    hist = fund_obj.history(period="1y")
+                    if not hist.empty:
+                        calc_df = hist.copy()
+                        break
                 except:
                     continue
-
-            if full_df.empty:
-                st.warning(f"⚠️ {name} のデータがテーブルとして抽出できませんでした。")
+            
+            if calc_df.empty:
+                st.warning(f"⚠️ {name} ({clean_code}) のデータが取得できませんでした。コードが正しいか確認してください。")
                 continue
 
-            full_df['Date'] = pd.to_datetime(full_df['Date'].astype(str).str.replace('年', '/').str.replace('月', '/').str.replace('日', ''), errors='coerce')
-            full_df['Price'] = pd.to_numeric(full_df['Price'].astype(str).str.replace(',', '').str.replace('円', ''), errors='coerce')
-            
-            full_df = full_df.dropna().drop_duplicates(subset=['Date']).sort_values('Date')
-            
-            calc_df = full_df[full_df['Date'] >= limit_date_1y].copy()
+            # タイムゾーン情報を削除して日付のみにする
+            calc_df.index = calc_df.index.tz_localize(None)
+            calc_df = calc_df[calc_df.index >= limit_date_1y].copy()
 
             if calc_df.empty:
-                st.warning(f"⚠️ {name} の有効な日付データがありません。")
+                st.warning(f"⚠️ {name} の有効な日付データ（過去1年分）がありません。")
                 continue
 
-            base_price = calc_df['Price'].iloc[0]
-            calc_df['Performance'] = (calc_df['Price'] / base_price) * 100
-            
-            fund_data_dict[name] = calc_df
+            # 終値（Close）を基準にする
+            if 'Close' in calc_df.columns:
+                prices = calc_df['Close']
+            else:
+                prices = calc_df.iloc[:, 0]
 
-        driver.quit()
+            base_price = prices.iloc[0]
+            performance = (prices / base_price) * 100
+            
+            fund_df_temp = pd.DataFrame({
+                'Date': calc_df.index,
+                'Price': prices,
+                'Performance': performance
+            })
+            
+            fund_data_dict[name] = fund_df_temp
+
         status_text_fund.text("投資信託の取得完了！")
         progress_bar_fund.empty()
         
