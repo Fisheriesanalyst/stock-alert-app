@@ -157,6 +157,7 @@ if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
     st.session_state['cookie_loaded'] = False
 
+# 初回起動時にクッキーからデータを読み込む処理
 if not st.session_state.get('cookie_loaded', False):
     saved_b64 = cookie_manager.get(cookie="stock_portfolio_v4")
     if saved_b64 is not None:
@@ -165,6 +166,11 @@ if not st.session_state.get('cookie_loaded', False):
             decompressed = zlib.decompress(decoded).decode('utf-8')
             st.session_state['portfolio'] = pd.DataFrame(json.loads(decompressed))
             st.session_state['cookie_loaded'] = True
+            
+            # ★修正ポイント：クッキーを読み込めた瞬間に、表のIDを進めて強制再描画する！
+            st.session_state['import_count'] += 1
+            st.rerun()
+            
         except Exception:
             st.session_state['cookie_loaded'] = True
 
