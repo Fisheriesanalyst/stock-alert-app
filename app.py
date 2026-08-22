@@ -14,7 +14,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
-import streamlit.components.v1 as components
 
 # --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
@@ -30,62 +29,35 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
-# --- セッションステートの初期化 ---
+# --- セッションステートおよびURLパラメータからの復元 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
+
 if 'portfolio' not in st.session_state:
-    st.session_state['portfolio'] = pd.DataFrame(default_data)
-
-# =========================================================
-# ブラウザのLocalStorageと完全に同期するHTML/JSコンポーネント
-# =========================================================
-storage_component = """
-<div></div>
-<script>
-const STORAGE_KEY = "stock_portfolio_multi_user_v1";
-
-// 親ウィンドウ（ブラウザ本体）のlocalStorageからデータを取得してStreamlitに通知する
-function syncDataToStreamlit() {
-    try {
-        const saved = window.parent.localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            const input = window.parent.document.querySelector('input[aria-label="hidden_sync_input"]');
-            if (input && input.value !== saved) {
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                nativeInputValueSetter.call(input, saved);
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        }
-    } catch (e) {
-        console.error("LocalStorage read error:", e);
-    }
-}
-
-// ページロード時に同期
-setTimeout(syncDataToStreamlit, 200);
-</script>
-"""
-
-# 見えない入力欄を配置してデータを受け取る
-st.markdown('<style>div[data-testid="stTextInput"] { display: none !important; }</style>', unsafe_allow_html=True)
-synced_val = st.text_input("hidden_sync_input", key="hidden_sync_input", label_visibility="collapsed")
-
-# 初回ロード時にLocalStorageにデータがあれば反映
-if 'data_loaded_from_browser' not in st.session_state:
-    st.session_state['data_loaded_from_browser'] = False
-
-if not st.session_state['data_loaded_from_browser']:
-    if synced_val and synced_val != "":
+    # URLパラメータ（query_params）からデータを取得
+    params = st.query_params
+    if "p" in params:
         try:
-            parsed_data = json.loads(synced_val)
-            st.session_state['portfolio'] = pd.DataFrame(parsed_data)
-            st.session_state['data_loaded_from_browser'] = True
-            st.rerun()
-        except:
-            pass
+            # URLパラメータからJSONを復元
+            decoded_json = base64_decode_json(params["p"])
+            st.session_state['portfolio'] = pd.DataFrame(decoded_json)
+        except Exception:
+            st.session_state['portfolio'] = pd.DataFrame(default_data)
+    else:
+        st.session_state['portfolio'] = pd.DataFrame(default_data)
 
-# コンポーネントを常に配置してブラウザストレージを監視
-components.html(storage_component, height=0)
+# URLエンコード/デコード用のヘルパー関数
+import urllib.parse
+import base64
+
+def encode_json_to_base64(df_obj):
+    json_str = df_obj.to_json(orient='records', force_ascii=False)
+    bytes_str = json_str.encode('utf-8')
+    return base64.urlsafe_b64encode(bytes_str).decode('utf-8')
+
+def base64_decode_json(b64_str):
+    bytes_str = base64.urlsafe_b64decode(b64_str.encode('utf-8'))
+    return json.loads(bytes_str.decode('utf-8'))
 
 # カスタムCSS
 st.markdown("""
@@ -162,7 +134,7 @@ except FileNotFoundError:
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、**あなたがお使いのブラウザ内（ローカル）にのみ**安全に保存されます。")
+st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、専用のURLとして記憶されます。")
 
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
@@ -184,25 +156,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
-# 1. ブラウザ保存ボタン（青）
+# 1. ブラウザ保存ボタン（青） - URLパラメータを更新
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            json_str = df.to_json(orient='records', force_ascii=False)
-            safe_json = json.dumps(json_str) # エスケープ用
-            # 親ウィンドウのlocalStorageに直接書き込むJavaScriptを実行
-            save_js = f"""
-            <script>
-            try {{
-                window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
-                console.log("Saved to parent localStorage successfully!");
-            }} catch (e) {{
-                console.error("Save error:", e);
-            }}
-            </script>
-            """
-            components.html(save_js, height=0)
-            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
+            encoded_data = encode_json_to_base64(df)
+            st.query_params["p"] = encoded_data
+            st.success("✅ この状態をブラウザ（URL）に記憶させました！次回からこのページを開けばリストが維持されます。")
+            time.sleep(0.5)
+            st.rerun()
         except Exception as e:
             st.error(f"保存に失敗しました。詳細: {e}")
 
@@ -239,14 +201,9 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # 自動的に親ウィンドウのlocalStorageにも保存
-                    safe_json = json.dumps(json_str)
-                    save_js = f"""
-                    <script>
-                    window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
-                    </script>
-                    """
-                    components.html(save_js, height=0)
+                    # URLパラメータにも自動反映
+                    encoded_data = encode_json_to_base64(st.session_state['portfolio'])
+                    st.query_params["p"] = encoded_data
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
@@ -267,14 +224,8 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
-                    json_str = json.dumps(imported_data_from_text, ensure_ascii=False)
-                    safe_json = json.dumps(json_str)
-                    save_js = f"""
-                    <script>
-                    window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
-                    </script>
-                    """
-                    components.html(save_js, height=0)
+                    encoded_data = encode_json_to_base64(st.session_state['portfolio'])
+                    st.query_params["p"] = encoded_data
                     
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
@@ -398,7 +349,6 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
-        
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
         
