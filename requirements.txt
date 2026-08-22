@@ -10,3 +10,4 @@ html5lib
 beautifulsoup4
 setuptools
 extra-streamlit-components
+streamlit-local-storage
