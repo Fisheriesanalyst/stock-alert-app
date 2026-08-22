@@ -14,6 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
+from streamlit_local_storage import LocalStorage
 
 # --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
@@ -29,35 +30,25 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
-# --- セッションステートおよびURLパラメータからの復元 ---
+# --- ローカルストレージマネージャーの初期化 ---
+local_storage = LocalStorage()
+
+# --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
 if 'portfolio' not in st.session_state:
-    # URLパラメータ（query_params）からデータを取得
-    params = st.query_params
-    if "p" in params:
+    # ブラウザのローカルストレージから "stock_portfolio_data" を取得する
+    saved_json = local_storage.getItem("stock_portfolio_data")
+    
+    if saved_json:
         try:
-            # URLパラメータからJSONを復元
-            decoded_json = base64_decode_json(params["p"])
-            st.session_state['portfolio'] = pd.DataFrame(decoded_json)
+            portfolio_list = json.loads(saved_json)
+            st.session_state['portfolio'] = pd.DataFrame(portfolio_list)
         except Exception:
             st.session_state['portfolio'] = pd.DataFrame(default_data)
     else:
         st.session_state['portfolio'] = pd.DataFrame(default_data)
-
-# URLエンコード/デコード用のヘルパー関数
-import urllib.parse
-import base64
-
-def encode_json_to_base64(df_obj):
-    json_str = df_obj.to_json(orient='records', force_ascii=False)
-    bytes_str = json_str.encode('utf-8')
-    return base64.urlsafe_b64encode(bytes_str).decode('utf-8')
-
-def base64_decode_json(b64_str):
-    bytes_str = base64.urlsafe_b64decode(b64_str.encode('utf-8'))
-    return json.loads(bytes_str.decode('utf-8'))
 
 # カスタムCSS
 st.markdown("""
@@ -130,11 +121,11 @@ try:
             type="primary"
         )
 except FileNotFoundError:
-    st.warning("運用マニュアルが読み込めません。GitHubへのアップロードを確認してください。")
+    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
-st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、専用のURLとして記憶されます。")
+st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、**あなたがお使いのブラウザ内（ローカル）にのみ**安全に保存されます。")
 
 editor_key = f"portfolio_editor_{st.session_state['import_count']}"
 
@@ -156,15 +147,14 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
-# 1. ブラウザ保存ボタン（青） - URLパラメータを更新
+# 1. ブラウザ保存ボタン（青）
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            encoded_data = encode_json_to_base64(df)
-            st.query_params["p"] = encoded_data
-            st.success("✅ この状態をブラウザ（URL）に記憶させました！次回からこのページを開けばリストが維持されます。")
-            time.sleep(0.5)
-            st.rerun()
+            json_str = df.to_json(orient='records', force_ascii=False)
+            # ローカルストレージに保存
+            local_storage.setItem("stock_portfolio_data", json_str)
+            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
         except Exception as e:
             st.error(f"保存に失敗しました。詳細: {e}")
 
@@ -201,11 +191,10 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # URLパラメータにも自動反映
-                    encoded_data = encode_json_to_base64(st.session_state['portfolio'])
-                    st.query_params["p"] = encoded_data
+                    # 同時にブラウザのローカルストレージも更新
+                    local_storage.setItem("stock_portfolio_data", json_str)
                     
-                    st.success("✅ ファイルからデータを復元しました！")
+                    st.success("✅ ファイルからデータを復元し、ブラウザに保存しました！")
                     time.sleep(0.3)
                     st.rerun() 
             except Exception as e:
@@ -224,10 +213,10 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
-                    encoded_data = encode_json_to_base64(st.session_state['portfolio'])
-                    st.query_params["p"] = encoded_data
+                    json_str = json.dumps(imported_data_from_text, ensure_ascii=False)
+                    local_storage.setItem("stock_portfolio_data", json_str)
                     
-                    st.success("✅ テキストからデータを完全に復元しました！")
+                    st.success("✅ テキストからデータを復元し、ブラウザに保存しました！")
                     time.sleep(0.5)
                     st.rerun()
                 else:
