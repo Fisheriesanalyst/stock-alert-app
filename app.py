@@ -35,73 +35,57 @@ if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
-if 'local_storage_checked' not in st.session_state:
-    st.session_state['local_storage_checked'] = False
 
 # =========================================================
-# 1. 起動時：ブラウザのローカルストレージからデータ取得を試みる
+# ブラウザのLocalStorageと完全に同期するHTML/JSコンポーネント
 # =========================================================
-if not st.session_state['local_storage_checked']:
-    # PythonがJSからデータを受け取るための「見えない入力フォーム」
-    st.markdown("""
-    <style>
-    div[data-testid="stTextInput"] { display: none !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    loaded_data = st.text_input("hidden_portfolio_data", key="hidden_portfolio_data", label_visibility="collapsed")
-    
-    # JSからデータが返ってきた場合
-    if loaded_data:
-        if loaded_data != "NOT_FOUND" and loaded_data != "":
-            try:
-                parsed = json.loads(loaded_data)
-                st.session_state['portfolio'] = pd.DataFrame(parsed)
-            except Exception:
-                pass
-        st.session_state['local_storage_checked'] = True
-        st.rerun()
+storage_component = """
+<div></div>
+<script>
+const STORAGE_KEY = "stock_portfolio_multi_user_v1";
 
-    # JSを実行してローカルストレージの値を自動取得（データがなければ "NOT_FOUND" を返す）
-    load_js = """
-    <script>
-    const STORAGE_KEY = "stock_portfolio_local_v5";
-    setTimeout(() => {
-        const savedData = localStorage.getItem(STORAGE_KEY) || "NOT_FOUND";
-        const parentDoc = window.parent.document;
-        const inputs = parentDoc.querySelectorAll('input[aria-label="hidden_portfolio_data"]');
-        if (inputs.length > 0) {
-            const targetInput = inputs[0];
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-            nativeInputValueSetter.call(targetInput, savedData);
-            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+// 親ウィンドウ（ブラウザ本体）のlocalStorageからデータを取得してStreamlitに通知する
+function syncDataToStreamlit() {
+    try {
+        const saved = window.parent.localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+            const input = window.parent.document.querySelector('input[aria-label="hidden_sync_input"]');
+            if (input && input.value !== saved) {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeInputValueSetter.call(input, saved);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
-    }, 100);
-    </script>
-    """
-    components.html(load_js, height=0)
-    
-    # 初回アクセス時、一瞬だけロード表示をして、データがなければそのままデフォルト表示へ進むタイマー代わりの処理
-    time.sleep(0.3)
-    if not loaded_data:
-        st.session_state['local_storage_checked'] = True
-        st.rerun()
-    st.stop()
+    } catch (e) {
+        console.error("LocalStorage read error:", e);
+    }
+}
 
-# =========================================================
-# 2. 保存処理の実行（ボタン押下後のRerun直後に呼び出される）
-# =========================================================
-if 'save_to_local_storage' in st.session_state:
-    json_str = st.session_state['save_to_local_storage']
-    safe_json_str = json_str.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
-    js_save = f"""
-    <script>
-    localStorage.setItem("stock_portfolio_local_v5", '{safe_json_str}');
-    </script>
-    """
-    components.html(js_save, height=0)
-    st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには一切影響しません）")
-    del st.session_state['save_to_local_storage']
+// ページロード時に同期
+setTimeout(syncDataToStreamlit, 200);
+</script>
+"""
+
+# 見えない入力欄を配置してデータを受け取る
+st.markdown('<style>div[data-testid="stTextInput"] { display: none !important; }</style>', unsafe_allow_html=True)
+synced_val = st.text_input("hidden_sync_input", key="hidden_sync_input", label_visibility="collapsed")
+
+# 初回ロード時にLocalStorageにデータがあれば反映
+if 'data_loaded_from_browser' not in st.session_state:
+    st.session_state['data_loaded_from_browser'] = False
+
+if not st.session_state['data_loaded_from_browser']:
+    if synced_val and synced_val != "":
+        try:
+            parsed_data = json.loads(synced_val)
+            st.session_state['portfolio'] = pd.DataFrame(parsed_data)
+            st.session_state['data_loaded_from_browser'] = True
+            st.rerun()
+        except:
+            pass
+
+# コンポーネントを常に配置してブラウザストレージを監視
+components.html(storage_component, height=0)
 
 # カスタムCSS
 st.markdown("""
@@ -204,10 +188,23 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            st.session_state['save_to_local_storage'] = df.to_json(orient='records', force_ascii=False)
-            st.rerun()
+            json_str = df.to_json(orient='records', force_ascii=False)
+            safe_json = json.dumps(json_str) # エスケープ用
+            # 親ウィンドウのlocalStorageに直接書き込むJavaScriptを実行
+            save_js = f"""
+            <script>
+            try {{
+                window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
+                console.log("Saved to parent localStorage successfully!");
+            }} catch (e) {{
+                console.error("Save error:", e);
+            }}
+            </script>
+            """
+            components.html(save_js, height=0)
+            st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
         except Exception as e:
-            st.error(f"保存設定に失敗しました。詳細: {e}")
+            st.error(f"保存に失敗しました。詳細: {e}")
 
 # 2. エクスポートボタン（緑）
 with col2:
@@ -242,7 +239,15 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    # 自動的に親ウィンドウのlocalStorageにも保存
+                    safe_json = json.dumps(json_str)
+                    save_js = f"""
+                    <script>
+                    window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
+                    </script>
+                    """
+                    components.html(save_js, height=0)
+                    
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
                     st.rerun() 
@@ -262,7 +267,15 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
-                    st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    json_str = json.dumps(imported_data_from_text, ensure_ascii=False)
+                    safe_json = json.dumps(json_str)
+                    save_js = f"""
+                    <script>
+                    window.parent.localStorage.setItem("stock_portfolio_multi_user_v1", {safe_json});
+                    </script>
+                    """
+                    components.html(save_js, height=0)
+                    
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
                     st.rerun()
