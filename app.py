@@ -14,7 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
-import streamlit.components.v1 as components
+import extra_streamlit_components as stx
 
 # --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
@@ -30,12 +30,28 @@ default_data = [
 # --- 画面設定 ---
 st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
+# --- Cookieマネージャーの初期化 ---
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
+
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
+# Cookieから保存済みの銘柄データを読み込み
 if 'portfolio' not in st.session_state:
-    st.session_state['portfolio'] = pd.DataFrame(default_data)
+    saved_portfolio = cookie_manager.get(cookie='stock_portfolio_data')
+    if saved_portfolio:
+        try:
+            portfolio_list = json.loads(saved_portfolio)
+            st.session_state['portfolio'] = pd.DataFrame(portfolio_list)
+        except Exception:
+            st.session_state['portfolio'] = pd.DataFrame(default_data)
+    else:
+        st.session_state['portfolio'] = pd.DataFrame(default_data)
 
 # カスタムCSS
 st.markdown("""
@@ -151,34 +167,6 @@ try:
 except FileNotFoundError:
     st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
 
-# --- ブラウザのローカルストレージ（各ユーザー固有）を利用した保存・読み込み処理 ---
-storage_key = "stock_portfolio_local_v5"
-
-# ローカルストレージからデータを取得・同期するためのJavaScriptコンポーネント
-storage_code = f"""
-<script>
-const STORAGE_KEY = "{storage_key}";
-
-// 1. ページ読み込み時に保存データがあればStreamlit側へ通知する仕組み
-window.addEventListener("DOMContentLoaded", () => {{
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved && !window.parent.document.getElementById("loaded_data_flag")) {{
-        // 初回ロード時にデータを渡す隠し要素を作成
-        const flag = document.createElement("div");
-        flag.id = "loaded_data_flag";
-        window.parent.document.body.appendChild(flag);
-    }});
-}});
-
-// 2. 外部から保存命令を受けたときの関数
-function saveToLocal(dataJson) {{
-    localStorage.setItem(STORAGE_KEY, dataJson);
-    console.log("LocalStorage Saved!");
-}}
-</script>
-"""
-components.html(storage_code, height=0)
-
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
 st.markdown("以下の表を直接クリックして銘柄を追加・編集・削除できます。変更した内容は、**「🌐 ブラウザに記憶させる」**ボタンを押すことで、**あなたがお使いのブラウザ内（ローカル）にのみ**安全に保存されます。")
@@ -208,13 +196,9 @@ with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
             json_str = df.to_json(orient='records', force_ascii=False)
-            # ブラウザのLocalStorageに保存するJavaScriptを実行
-            js_code = f"""
-            <script>
-            localStorage.setItem("{storage_key}", {json.dumps(json_str)});
-            </script>
-            """
-            components.html(js_code, height=0)
+            # Cookieへ保存（有効期限365日）
+            expires_at = datetime.now() + timedelta(days=365)
+            cookie_manager.set('stock_portfolio_data', json_str, expires_at=expires_at, key="set_cookie_btn")
             st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
         except Exception as e:
             st.error(f"保存に失敗しました。詳細: {e}")
@@ -252,14 +236,10 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # ブラウザのLocalStorageも同時に更新
+                    # Cookieも更新
+                    expires_at = datetime.now() + timedelta(days=365)
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    js_code = f"""
-                    <script>
-                    localStorage.setItem("{storage_key}", {json.dumps(new_json_str)});
-                    </script>
-                    """
-                    components.html(js_code, height=0)
+                    cookie_manager.set('stock_portfolio_data', new_json_str, expires_at=expires_at, key="set_cookie_upload")
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
@@ -281,12 +261,8 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['import_count'] += 1
                     
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    js_code = f"""
-                    <script>
-                    localStorage.setItem("{storage_key}", {json.dumps(new_json_str)});
-                    </script>
-                    """
-                    components.html(js_code, height=0)
+                    expires_at = datetime.now() + timedelta(days=365)
+                    cookie_manager.set('stock_portfolio_data', new_json_str, expires_at=expires_at, key="set_cookie_text")
                     
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
