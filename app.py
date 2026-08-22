@@ -33,89 +33,69 @@ st.set_page_config(page_title="株価・投資信託 チェックボード", pag
 # --- Cookieマネージャーの初期化 ---
 cookie_manager = stx.CookieManager(key="portfolio_cookie_manager")
 
+# 【追加】st.rerun()が走った直後に確実にCookieを保存するための処理
+if 'pending_cookie_save' in st.session_state:
+    expires_at = datetime.now() + timedelta(days=365)
+    # keyに現在時刻を入れて重複エラーを回避
+    cookie_manager.set('stock_portfolio_data', st.session_state['pending_cookie_save'], expires_at=expires_at, key=f"pending_{int(time.time())}")
+    del st.session_state['pending_cookie_save']
+
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 
-# Cookieから保存済みの銘柄データを読み込み
+if 'run_count' not in st.session_state:
+    st.session_state.run_count = 0
+st.session_state.run_count += 1
+
+# --- Cookieからのデータ復元（非同期ラグへの対策） ---
 if 'portfolio' not in st.session_state:
-    saved_portfolio = cookie_manager.get(cookie='stock_portfolio_data')
+    cookies = cookie_manager.get_all()
+    saved_portfolio = cookies.get('stock_portfolio_data') if isinstance(cookies, dict) else None
+    
     if saved_portfolio:
         try:
             portfolio_list = json.loads(saved_portfolio)
             st.session_state['portfolio'] = pd.DataFrame(portfolio_list)
         except Exception:
             st.session_state['portfolio'] = pd.DataFrame(default_data)
-    else:
+    elif st.session_state.run_count > 1:
+        # 2回目の実行以降でもCookieが無ければデフォルトをセット
         st.session_state['portfolio'] = pd.DataFrame(default_data)
+    else:
+        # 1回目の実行時はCookieの受信が間に合っていないため、処理を止めて待つ
+        st.info("🔄 ブラウザから過去の保存データを読み込んでいます...")
+        st.stop()
 
 # カスタムCSS
 st.markdown("""
 <style>
 /* 右上のヘッダーメニューを非表示 */
-[data-testid="stHeader"] {
-    display: none !important;
+[data-testid="stHeader"] { display: none !important; }
+.viewerBadge_container, .viewerBadge_link, #viewerBadge,
+[data-testid="stAppDeployButton"], [data-testid="stToolbar"],
+[data-testid="ManageAppBadge"], a[href*="streamlit.io/cloud"],
+a[href*="share.streamlit.io"], footer {
+    display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;
 }
-
-/* 右下のStreamlitアイコン（バッジ）やフッターを非表示 */
-.viewerBadge_container, 
-.viewerBadge_link, 
-#viewerBadge,
-[data-testid="stAppDeployButton"],
-[data-testid="stToolbar"],
-[data-testid="ManageAppBadge"],
-a[href*="streamlit.io/cloud"],
-a[href*="share.streamlit.io"],
-footer {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-}
-
 @media (max-width: 768px) {
-    [data-testid="column"] {
-        width: 100% !important;
-        flex: 1 1 100% !important;
-        min-width: 100% !important;
-        margin-bottom: 10px !important;
-    }
+    [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; min-width: 100% !important; margin-bottom: 10px !important; }
 }
-
-/* 3つのボタンの高さを60pxに統一 */
-div.stButton > button, 
-div.stDownloadButton > button {
-    width: 100% !important;
-    height: 60px !important;
-    border-radius: 6px !important;
-    font-weight: bold !important;
-    font-size: 15px !important;
-    border: none !important;
+div.stButton > button, div.stDownloadButton > button {
+    width: 100% !important; height: 60px !important; border-radius: 6px !important; font-weight: bold !important; font-size: 15px !important; border: none !important;
 }
-
 div.stButton > button { background-color: #1f77b4 !important; color: white !important; }
 div.stButton > button:hover { background-color: #155a8a !important; color: white !important; }
-
 div.stDownloadButton > button { background-color: #2ca02c !important; color: white !important; }
 div.stDownloadButton > button:hover { background-color: #217c21 !important; color: white !important; }
-
-/* ファイルアップローダーのデザイン */
 div[data-testid="stFileUploader"] { width: 100% !important; }
 div[data-testid="stFileUploader"] > label { display: none !important; }
 div[data-testid="stFileUploader"] section {
-    background-color: #fff3e0 !important;
-    border: 2px dashed #ff7f0e !important;
-    border-radius: 6px !important;
-    min-height: 60px !important;
-    padding: 5px !important;
+    background-color: #fff3e0 !important; border: 2px dashed #ff7f0e !important; border-radius: 6px !important; min-height: 60px !important; padding: 5px !important;
 }
 div[data-testid="stFileUploader"] small { display: none !important; }
 div[data-testid="stFileUploader"] section button {
-    background-color: #ff7f0e !important;
-    color: white !important;
-    border: none !important;
-    font-weight: bold !important;
-    border-radius: 4px !important;
+    background-color: #ff7f0e !important; color: white !important; border: none !important; font-weight: bold !important; border-radius: 4px !important;
 }
 div[data-testid="stFileUploader"] section button:hover { background-color: #d6680b !important; }
 </style>
@@ -136,11 +116,8 @@ st.info("""
 本アプリでは、登録した保有銘柄の過去1年間の最高値を基準に現在の下落率を自動計算し、3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
-# 色分けの説明文を追加
 st.markdown("""
-<div style="font-size: 1.1em; font-weight: bold; margin-bottom: 5px; padding: 0 10px;">
-    個別株式のアラートはグラフの色でも表示します
-</div>
+<div style="font-size: 1.1em; font-weight: bold; margin-bottom: 5px; padding: 0 10px;">個別株式のアラートはグラフの色でも表示します</div>
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
     <span style="color: #1f77b4;">15％未満：青色のグラフ</span><br>
     <span style="color: #ffb300;">15％～25％：黄色のグラフ</span><br>
@@ -161,7 +138,7 @@ try:
             type="primary"
         )
 except FileNotFoundError:
-    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
+    st.warning("運用マニュアルが読み込めません。GitHubへのアップロードを確認してください。")
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
@@ -192,9 +169,8 @@ with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
             json_str = df.to_json(orient='records', force_ascii=False)
-            # Cookieへ保存（有効期限365日）
             expires_at = datetime.now() + timedelta(days=365)
-            cookie_manager.set('stock_portfolio_data', json_str, expires_at=expires_at, key="set_cookie_btn")
+            cookie_manager.set('stock_portfolio_data', json_str, expires_at=expires_at, key=f"btn_save_{int(time.time())}")
             st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには影響しません）")
         except Exception as e:
             st.error(f"保存に失敗しました。詳細: {e}")
@@ -232,10 +208,9 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # Cookieも更新
-                    expires_at = datetime.now() + timedelta(days=365)
+                    # 次のRerun直後にCookie保存を実行するためのフラグ
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    cookie_manager.set('stock_portfolio_data', new_json_str, expires_at=expires_at, key="set_cookie_upload")
+                    st.session_state['pending_cookie_save'] = new_json_str
                     
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
@@ -256,9 +231,9 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
+                    # 次のRerun直後にCookie保存を実行するためのフラグ
                     new_json_str = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    expires_at = datetime.now() + timedelta(days=365)
-                    cookie_manager.set('stock_portfolio_data', new_json_str, expires_at=expires_at, key="set_cookie_text")
+                    st.session_state['pending_cookie_save'] = new_json_str
                     
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
@@ -509,7 +484,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
 
     st.success("すべての処理が完了しました！")
 
-# --- フッター（センタリング表示） ---
+# --- フッター ---
 st.markdown("---")
 st.markdown(
     """
