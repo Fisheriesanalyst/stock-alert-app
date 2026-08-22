@@ -35,16 +35,14 @@ if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
 if 'portfolio' not in st.session_state:
     st.session_state['portfolio'] = pd.DataFrame(default_data)
-if 'local_storage_loaded' not in st.session_state:
-    st.session_state['local_storage_loaded'] = False
+if 'local_storage_checked' not in st.session_state:
+    st.session_state['local_storage_checked'] = False
 
 # =========================================================
-# 1. 起動時：ブラウザのローカルストレージから個人データを読み込む
+# 1. 起動時：ブラウザのローカルストレージからデータ取得を試みる
 # =========================================================
-if not st.session_state['local_storage_loaded']:
-    st.info("🔄 あなた専用の記憶データを読み込んでいます...")
-    
-    # PythonがJSからデータを受け取るための「見えない入力フォーム」を配置
+if not st.session_state['local_storage_checked']:
+    # PythonがJSからデータを受け取るための「見えない入力フォーム」
     st.markdown("""
     <style>
     div[data-testid="stTextInput"] { display: none !important; }
@@ -53,45 +51,48 @@ if not st.session_state['local_storage_loaded']:
     
     loaded_data = st.text_input("hidden_portfolio_data", key="hidden_portfolio_data", label_visibility="collapsed")
     
-    # JSからデータが入力された瞬間に反応する
+    # JSからデータが返ってきた場合
     if loaded_data:
-        if loaded_data != "EMPTY":
+        if loaded_data != "NOT_FOUND" and loaded_data != "":
             try:
                 parsed = json.loads(loaded_data)
                 st.session_state['portfolio'] = pd.DataFrame(parsed)
             except Exception:
                 pass
-        st.session_state['local_storage_loaded'] = True
+        st.session_state['local_storage_checked'] = True
         st.rerun()
 
-    # JSを実行してローカルストレージの値を上の見えないフォームに自動入力させる
+    # JSを実行してローカルストレージの値を自動取得（データがなければ "NOT_FOUND" を返す）
     load_js = """
     <script>
     const STORAGE_KEY = "stock_portfolio_local_v5";
     setTimeout(() => {
-        const savedData = localStorage.getItem(STORAGE_KEY) || "EMPTY";
+        const savedData = localStorage.getItem(STORAGE_KEY) || "NOT_FOUND";
         const parentDoc = window.parent.document;
-        // Streamlitが生成した見えないフォームを探す
         const inputs = parentDoc.querySelectorAll('input[aria-label="hidden_portfolio_data"]');
         if (inputs.length > 0) {
             const targetInput = inputs[0];
             const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
             nativeInputValueSetter.call(targetInput, savedData);
-            // Python側に値が変更されたことを強制的に通知する
             targetInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
-    }, 150);
+    }, 100);
     </script>
     """
     components.html(load_js, height=0)
-    st.stop() # 読み込みが完了するまで画面生成を一時停止
+    
+    # 初回アクセス時、一瞬だけロード表示をして、データがなければそのままデフォルト表示へ進むタイマー代わりの処理
+    time.sleep(0.3)
+    if not loaded_data:
+        st.session_state['local_storage_checked'] = True
+        st.rerun()
+    st.stop()
 
 # =========================================================
 # 2. 保存処理の実行（ボタン押下後のRerun直後に呼び出される）
 # =========================================================
 if 'save_to_local_storage' in st.session_state:
     json_str = st.session_state['save_to_local_storage']
-    # JSに埋め込むためにエスケープ処理
     safe_json_str = json_str.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
     js_save = f"""
     <script>
@@ -203,7 +204,6 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
         try:
-            # 即座にJSを実行せず、Rerunをかけて最上部のJS実行処理へ回す
             st.session_state['save_to_local_storage'] = df.to_json(orient='records', force_ascii=False)
             st.rerun()
         except Exception as e:
@@ -242,7 +242,6 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # インポートと同時にブラウザにも保存を強制する
                     st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
                     st.success("✅ ファイルからデータを復元しました！")
                     time.sleep(0.3)
@@ -263,7 +262,6 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
-                    # インポートと同時にブラウザにも保存を強制する
                     st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
                     st.success("✅ テキストからデータを完全に復元しました！")
                     time.sleep(0.5)
