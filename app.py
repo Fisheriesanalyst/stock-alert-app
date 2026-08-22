@@ -31,11 +31,7 @@ default_data = [
 st.set_page_config(page_title="株価・投資信託 チェックボード", page_icon="📈", layout="centered")
 
 # --- Cookieマネージャーの初期化 ---
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+cookie_manager = stx.CookieManager(key="portfolio_cookie_manager")
 
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
