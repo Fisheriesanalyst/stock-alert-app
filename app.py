@@ -14,7 +14,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 import japanize_matplotlib
-import extra_streamlit_components as stx
+import streamlit.components.v1 as components
 
 # --- デフォルトの銘柄データ（7銘柄） ---
 default_data = [
@@ -33,82 +33,96 @@ st.set_page_config(page_title="株価・投資信託 チェックボード", pag
 # --- セッションステートの初期化 ---
 if 'import_count' not in st.session_state:
     st.session_state['import_count'] = 0
-
-# --- Cookieマネージャーの初期化 ---
-# キャッシュ干渉を防ぐためキーを固定
-cookie_manager = stx.CookieManager(key="portfolio_cm")
-
-# --- 1. 初期化と非同期ラグ対策（1回目の空回りを強制） ---
-# StreamlitはブラウザからCookieを受け取るのに一瞬のタイムラグがあるため、初回の読み込みを待つ処理
-if 'cookie_initialized' not in st.session_state:
-    st.session_state['cookie_initialized'] = True
-    st.info("🔄 ブラウザから記憶データを読み込んでいます...")
-    time.sleep(0.5)
-    st.stop() 
-
-# --- 2. Cookieの確実な保存処理（Rerun直後に最上位で実行） ---
-if 'save_trigger' in st.session_state:
-    # ブラウザを閉じても消えないように確実に365日後の有効期限をセット
-    expires = datetime.now() + timedelta(days=365)
-    
-    # 画面の一番上で実行することで、途中で処理が途切れるのを防ぐ
-    cookie_manager.set(
-        'stock_portfolio_data', 
-        st.session_state['save_data'], 
-        expires_at=expires, 
-        key="persistent_save_component"
-    )
-    
-    del st.session_state['save_trigger']
-    st.session_state['show_save_success'] = True
-
-# 保存成功メッセージの表示
-if st.session_state.get('show_save_success', False):
-    st.success("✅ ブラウザ専用に銘柄リストを記憶させました！（ブラウザを閉じても復元されます）")
-    st.session_state['show_save_success'] = False
-
-# --- 3. Cookieからのデータ復元 ---
 if 'portfolio' not in st.session_state:
-    cookies = cookie_manager.get_all()
-    if isinstance(cookies, dict) and 'stock_portfolio_data' in cookies:
-        try:
-            portfolio_list = json.loads(cookies['stock_portfolio_data'])
-            st.session_state['portfolio'] = pd.DataFrame(portfolio_list)
-        except Exception:
-            st.session_state['portfolio'] = pd.DataFrame(default_data)
-    else:
-        st.session_state['portfolio'] = pd.DataFrame(default_data)
+    st.session_state['portfolio'] = pd.DataFrame(default_data)
+if 'local_storage_loaded' not in st.session_state:
+    st.session_state['local_storage_loaded'] = False
 
-# --- カスタムCSS ---
+# =========================================================
+# 1. 起動時：ブラウザのローカルストレージから個人データを読み込む
+# =========================================================
+if not st.session_state['local_storage_loaded']:
+    st.info("🔄 あなた専用の記憶データを読み込んでいます...")
+    
+    # PythonがJSからデータを受け取るための「見えない入力フォーム」を配置
+    st.markdown("""
+    <style>
+    div[data-testid="stTextInput"] { display: none !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    loaded_data = st.text_input("hidden_portfolio_data", key="hidden_portfolio_data", label_visibility="collapsed")
+    
+    # JSからデータが入力された瞬間に反応する
+    if loaded_data:
+        if loaded_data != "EMPTY":
+            try:
+                parsed = json.loads(loaded_data)
+                st.session_state['portfolio'] = pd.DataFrame(parsed)
+            except Exception:
+                pass
+        st.session_state['local_storage_loaded'] = True
+        st.rerun()
+
+    # JSを実行してローカルストレージの値を上の見えないフォームに自動入力させる
+    load_js = """
+    <script>
+    const STORAGE_KEY = "stock_portfolio_local_v5";
+    setTimeout(() => {
+        const savedData = localStorage.getItem(STORAGE_KEY) || "EMPTY";
+        const parentDoc = window.parent.document;
+        // Streamlitが生成した見えないフォームを探す
+        const inputs = parentDoc.querySelectorAll('input[aria-label="hidden_portfolio_data"]');
+        if (inputs.length > 0) {
+            const targetInput = inputs[0];
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(targetInput, savedData);
+            // Python側に値が変更されたことを強制的に通知する
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }, 150);
+    </script>
+    """
+    components.html(load_js, height=0)
+    st.stop() # 読み込みが完了するまで画面生成を一時停止
+
+# =========================================================
+# 2. 保存処理の実行（ボタン押下後のRerun直後に呼び出される）
+# =========================================================
+if 'save_to_local_storage' in st.session_state:
+    json_str = st.session_state['save_to_local_storage']
+    # JSに埋め込むためにエスケープ処理
+    safe_json_str = json_str.replace('\\', '\\\\').replace('"', '\\"').replace("'", "\\'")
+    js_save = f"""
+    <script>
+    localStorage.setItem("stock_portfolio_local_v5", '{safe_json_str}');
+    </script>
+    """
+    components.html(js_save, height=0)
+    st.success("✅ このブラウザ専用に銘柄リストを記憶させました！（他のユーザーには一切影響しません）")
+    del st.session_state['save_to_local_storage']
+
+# カスタムCSS
 st.markdown("""
 <style>
 /* 右上のヘッダーメニューを非表示 */
 [data-testid="stHeader"] { display: none !important; }
-
-/* 右下のStreamlitアイコン（バッジ）やフッターを非表示 */
 .viewerBadge_container, .viewerBadge_link, #viewerBadge,
 [data-testid="stAppDeployButton"], [data-testid="stToolbar"],
 [data-testid="ManageAppBadge"], a[href*="streamlit.io/cloud"],
 a[href*="share.streamlit.io"], footer {
     display: none !important; visibility: hidden !important; opacity: 0 !important; pointer-events: none !important;
 }
-
 @media (max-width: 768px) {
     [data-testid="column"] { width: 100% !important; flex: 1 1 100% !important; min-width: 100% !important; margin-bottom: 10px !important; }
 }
-
-/* 3つのボタンの高さを60pxに統一 */
 div.stButton > button, div.stDownloadButton > button {
     width: 100% !important; height: 60px !important; border-radius: 6px !important; font-weight: bold !important; font-size: 15px !important; border: none !important;
 }
-
 div.stButton > button { background-color: #1f77b4 !important; color: white !important; }
 div.stButton > button:hover { background-color: #155a8a !important; color: white !important; }
-
 div.stDownloadButton > button { background-color: #2ca02c !important; color: white !important; }
 div.stDownloadButton > button:hover { background-color: #217c21 !important; color: white !important; }
-
-/* ファイルアップローダーのデザイン */
 div[data-testid="stFileUploader"] { width: 100% !important; }
 div[data-testid="stFileUploader"] > label { display: none !important; }
 div[data-testid="stFileUploader"] section {
@@ -137,7 +151,6 @@ st.info("""
 本アプリでは、登録した保有銘柄の過去1年間の最高値を基準に現在の下落率を自動計算し、3段階でアラートを表示します。日々の投資判断のサポートとしてご活用ください。
 """)
 
-# 色分けの説明文を追加
 st.markdown("""
 <div style="font-size: 1.1em; font-weight: bold; margin-bottom: 5px; padding: 0 10px;">個別株式のアラートはグラフの色でも表示します</div>
 <div style="font-size: 1.0em; margin-bottom: 20px; padding: 0 10px; font-weight: bold;">
@@ -160,8 +173,7 @@ try:
             type="primary"
         )
 except FileNotFoundError:
-    st.warning("運用マニュアル（運用マニュアル20260803.pdf）が読み込めません。GitHubへのアップロードを確認してください。")
-
+    st.warning("運用マニュアルが読み込めません。GitHubへのアップロードを確認してください。")
 
 # --- 1. 銘柄の管理機能 ---
 st.markdown("#### 1. 銘柄の登録・管理")
@@ -190,10 +202,12 @@ col1, col2, col3 = st.columns(3)
 # 1. ブラウザ保存ボタン（青）
 with col1:
     if st.button("🌐 ブラウザに記憶させる", use_container_width=True):
-        # 変更されたデータをセッションステートに保持し、Rerunをかけて最上部の保存処理を呼び出す
-        st.session_state['save_data'] = df.to_json(orient='records', force_ascii=False)
-        st.session_state['save_trigger'] = True
-        st.rerun()
+        try:
+            # 即座にJSを実行せず、Rerunをかけて最上部のJS実行処理へ回す
+            st.session_state['save_to_local_storage'] = df.to_json(orient='records', force_ascii=False)
+            st.rerun()
+        except Exception as e:
+            st.error(f"保存設定に失敗しました。詳細: {e}")
 
 # 2. エクスポートボタン（緑）
 with col2:
@@ -228,15 +242,15 @@ with col3:
                     st.session_state['import_count'] += 1
                     st.session_state['last_uploaded_id'] = file_id
                     
-                    # インポートと同時にブラウザCookieにも保存するためのトリガー
-                    st.session_state['save_data'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    st.session_state['save_trigger'] = True
-                    
+                    # インポートと同時にブラウザにも保存を強制する
+                    st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    st.success("✅ ファイルからデータを復元しました！")
+                    time.sleep(0.3)
                     st.rerun() 
             except Exception as e:
                 st.error(f"ファイルインポートに失敗: {e}")
 
-# --- Android等でファイル選択が機能しない場合の「テキスト貼り付けルート」 ---
+# --- Android等でファイル選択が機能しない場合のインポート ---
 with st.expander("📲 Androidでファイルが選べない場合のインポート（テキスト貼り付け）"):
     st.info("PCで保存したJSONファイルをメモ帳等で開き、中の文字をすべてコピーして下の枠に貼り付けてください。")
     json_text_input = st.text_area("JSONテキストをここに貼り付け", height=100, label_visibility="collapsed")
@@ -249,10 +263,10 @@ with st.expander("📲 Androidでファイルが選べない場合のインポ�
                     st.session_state['portfolio'] = pd.DataFrame(imported_data_from_text)
                     st.session_state['import_count'] += 1
                     
-                    # インポートと同時にブラウザCookieにも保存するためのトリガー
-                    st.session_state['save_data'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
-                    st.session_state['save_trigger'] = True
-                    
+                    # インポートと同時にブラウザにも保存を強制する
+                    st.session_state['save_to_local_storage'] = st.session_state['portfolio'].to_json(orient='records', force_ascii=False)
+                    st.success("✅ テキストからデータを完全に復元しました！")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
                     st.error("JSONデータの形式が間違っています。")
@@ -500,7 +514,7 @@ if st.button("🔄 最新データを取得してチェックする", type="prim
 
     st.success("すべての処理が完了しました！")
 
-# --- フッター（センタリング表示） ---
+# --- フッター ---
 st.markdown("---")
 st.markdown(
     """
